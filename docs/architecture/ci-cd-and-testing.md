@@ -2,26 +2,34 @@
 
 PROTOTYPE — resolves wayfinder ticket [#5](https://github.com/hugoforte/ChoirManagement/issues/5). Committed on a throwaway branch (`prototype/ci-cd-pipeline`) for review; fold the accepted shape into `main` once confirmed. The exact test *surface* (which functions, which components) is intentionally left vague — that follows from the schema ticket (#2), still open.
 
-## Pipelines
+Revised after reviewing [hugoforte/hugo-tessa-20-years](https://github.com/hugoforte/hugo-tessa-20-years), a prior Convex project with a proven CI/CD + E2E setup worth adopting directly rather than reinventing.
 
-Three workflows, three different owners/triggers:
+## Deploy: no GitHub Actions deploy step
 
-1. **`pr-checks.yml`** — every PR, every repo (upstream or a self-hoster's fork). Typecheck, lint, test. Required status check before merge.
-2. **`deploy-prod.yml`** — a self-hoster's own fork, on merge to `main`. Runs the same checks, then deploys that Choir's Convex functions to their `prod` deployment and builds the frontend. Where the built frontend gets hosted is deliberately **not** prescribed here — that's the setup guide's call (#4), since it varies by self-hoster.
-3. **`deploy-demo.yml`** — the upstream `hugoforte/ChoirManagement` repo only (guarded by a repository check), on merge to `main`. Deploys to a maintainer-owned demo Convex project, reseeds fake data, and publishes the frontend to GitHub Pages — zero extra hosting account, and GH Pages' native Actions integration keeps this workflow self-contained.
+Vercel is the recommended frontend host (for both the maintainer's demo and, per the setup guide, self-hosters). Convex's own [Vercel integration](https://docs.convex.dev/production/hosting/vercel) means **deploy isn't a GitHub Actions job at all**: set Vercel's Build Command to `npx convex deploy --cmd 'npm run build'` with a `CONVEX_DEPLOY_KEY` env var (Production-scoped for `main`, Preview-scoped for PR branches — each PR gets its own isolated Convex backend). Push to the connected branch → Vercel builds and deploys the frontend, and `convex deploy` deploys the functions, together, natively. This removes the `deploy-prod.yml` / `deploy-demo.yml` workflows from the earlier draft entirely.
 
-All three assume `CONVEX_DEPLOY_KEY`-style secrets scoped per-environment (`production` vs `demo`), which is Convex's own recommended pattern for CI deploys.
+**Known constraint**: Clerk does not support ephemeral `vercel.app` preview URLs (it needs a custom domain), so authenticated E2E can't run against per-PR previews out of the box — see below.
+
+## Workflows
+
+1. **`pr-checks.yml`** — every PR and push to `main`: `npm run check` (typecheck `convex/`, typecheck the app, `vite build`) then `npm test` (Vitest + `convex-test`). Required status check before merge.
+2. **`preview-playwright.yml`** — Playwright E2E, split into two jobs because of the Clerk/preview-URL constraint:
+   - **`e2e-guest`**: every push and PR (skips draft PRs and fork PRs, mirrors the reference repo). Resolves that commit's Vercel *preview* URL, runs only the unauthenticated `chromium-guest` project — this is exactly where the public Events site (ticket #7) gets exercised, since it needs no Clerk login.
+   - **`e2e-authenticated`**: push to `main` only. Resolves the stable *production* URL (custom domain, Clerk works), reseeds demo data (upstream repo only, guarded by `github.repository`), and runs the full `chromium-admin` / `chromium-director` / `chromium-chorister` projects.
+   - Both jobs check for `VERCEL_TOKEN` / `VERCEL_PROJECT_ID` / `VERCEL_TEAM_ID` first and **skip with a notice, not a failure**, if absent — a self-hoster's fork without Vercel wired up doesn't get red CI for it.
 
 ## Testing
 
-- **Vitest** for unit tests and React component tests (Testing Library) — fits a Vite project natively, no separate runner to configure.
-- **`convex-test`** for Convex functions, using `t.withIdentity()` to simulate authenticated Members with a given Role (per the auth research already on file, [`docs/research/convex-clerk-integration-pattern.md`](../research/convex-clerk-integration-pattern.md)) — this is how Role-based authorization checks get tested without a real Clerk account.
-- **E2E (e.g. Playwright): explicitly deferred**, not part of the v1 test gate. Worth revisiting once there's a UI to click through; adding it now would test nothing.
+- **Vitest** for unit tests and React component tests (Testing Library).
+- **`convex-test`**, using `t.withIdentity()` (per the earlier auth research, [`docs/research/convex-clerk-integration-pattern.md`](../research/convex-clerk-integration-pattern.md)) to unit-test Role-based authorization without a real Clerk account or a full E2E run.
+- **Playwright**, run against real deployed URLs only (never a CI-spun-up dev server) — `playwright.config.ts` should read `PLAYWRIGHT_BASE_URL` (default `localhost:5173`) so the same suite runs locally and in CI, exactly as in the reference repo.
+- **Role-scoped Playwright projects**: a `setup` project logs in once per role and saves `storageState`, reused by `chromium-guest` / `chromium-admin` / `chromium-director` / `chromium-chorister` — avoids re-authenticating per test and gives a natural place to assert what each Role can and can't see (e.g. a Chorister project asserting the Member roster's admin actions aren't rendered).
 
 ## Merge gate
 
-A PR can merge once: typecheck passes, lint passes, and `vitest` (including `convex-test` cases) passes. No coverage threshold proposed for v1 — revisit once the schema and first functions exist and there's something real to measure coverage against.
+A PR can merge once: `npm run check` passes, `npm test` passes, and `e2e-guest` passes (when Vercel secrets are configured — see skip behavior above). `e2e-authenticated` isn't a merge gate (it only runs post-merge, against production) — it's a post-merge safety net, not a blocker.
 
-## Open question for you
+## Open questions for you
 
-Frontend hosting target for **self-hosters'** prod deploys (not the demo, which is pinned to GitHub Pages above) is left unspecified — `deploy-prod.yml` stops at producing a build artifact. Worth deciding in the setup guide ticket (#4): recommend one target (e.g. "any static host, here's an nginx example") or stay fully open-ended?
+1. Confirmed you're OK with **Vercel** as the recommended self-hosting frontend target (not just the demo) — should this go in the setup guide (#4) as *the* documented path, or as *a* documented path alongside a manual "any static host" alternative for self-hosters who don't want a Vercel account?
+2. Clerk's custom-domain requirement for previews to work: worth solving properly later (a documented custom preview-domain pattern), or is "guest-only E2E on previews, full role coverage post-merge on production" good enough for v1?
