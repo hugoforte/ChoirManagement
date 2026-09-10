@@ -12,9 +12,9 @@ Four free accounts, plus one small recurring cost:
 
 1. **GitHub** — to fork the repo.
 2. **Convex** ([convex.dev](https://convex.dev)) — your choir's database and backend functions. Free at the scale of a single choir.
-3. **Clerk** ([clerk.com](https://clerk.com)) — your choir's login (Google + username/password). Free, but see the domain note below.
+3. **Clerk** ([clerk.com](https://clerk.com)) — your choir's login (Google + username/password). **Free** — Clerk's Hobby plan (no credit card, 50,000 monthly active users/app) explicitly includes custom-domain support, which is what the next item is for.
 4. **Vercel** ([vercel.com](https://vercel.com)) — hosts the frontend and triggers your deploys. Free tier is enough.
-5. **A domain you own** (e.g. via Namecheap, Cloudflare Registrar, ~$10-15/year) — **not optional**. Clerk's Development instances (the free, no-domain option) are hard-capped at 100 users and explicitly unsupported for real production use per Clerk's own docs — a real choir needs a Clerk **Production** instance, which requires a custom domain. Budget this into your choir's setup, even if everything else is free.
+5. **A domain you own** (e.g. via Namecheap, Cloudflare Registrar, ~$10-15/year) — the one real cost in this whole setup, and it's not about Clerk's pricing. Clerk's **Development** instance type (distinct from the Hobby/paid *plan* question — this is about environment, not billing) is capped at 100 users and explicitly unsupported for production use per Clerk's own docs, so a real choir needs a **Production** instance, and Production requires a custom domain regardless of which Clerk plan you're on. You're not paying Clerk for this — you're paying a domain registrar, and Clerk itself stays free.
 
 Each Choir gets its **own** Convex project and **own** Clerk application — never share one Clerk app or Convex project across choirs (see ADR-0001, ADR-0002). Keep that in mind if you're setting this up for more than one choir: repeat the whole guide per choir.
 
