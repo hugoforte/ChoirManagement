@@ -8,12 +8,13 @@ This guide walks a volunteer "technical Member" through standing up their own Ch
 
 ## What you'll need
 
-Four accounts total, all free at the scale of a single choir (tens to low hundreds of Members):
+Four free accounts, plus one small recurring cost:
 
 1. **GitHub** — to fork the repo.
-2. **Convex** ([convex.dev](https://convex.dev)) — your choir's database and backend functions.
-3. **Clerk** ([clerk.com](https://clerk.com)) — your choir's login (Google + username/password).
-4. **Vercel** ([vercel.com](https://vercel.com)) — hosts the frontend and triggers your deploys.
+2. **Convex** ([convex.dev](https://convex.dev)) — your choir's database and backend functions. Free at the scale of a single choir.
+3. **Clerk** ([clerk.com](https://clerk.com)) — your choir's login (Google + username/password). Free, but see the domain note below.
+4. **Vercel** ([vercel.com](https://vercel.com)) — hosts the frontend and triggers your deploys. Free tier is enough.
+5. **A domain you own** (e.g. via Namecheap, Cloudflare Registrar, ~$10-15/year) — **not optional**. Clerk's Development instances (the free, no-domain option) are hard-capped at 100 users and explicitly unsupported for real production use per Clerk's own docs — a real choir needs a Clerk **Production** instance, which requires a custom domain. Budget this into your choir's setup, even if everything else is free.
 
 Each Choir gets its **own** Convex project and **own** Clerk application — never share one Clerk app or Convex project across choirs (see ADR-0001, ADR-0002). Keep that in mind if you're setting this up for more than one choir: repeat the whole guide per choir.
 
@@ -53,9 +54,8 @@ Each Choir gets its **own** Convex project and **own** Clerk application — nev
    - In the Clerk dashboard, go to **Configure → JWT Templates**, and use the **Convex** template (or create one if it's not offered directly — Clerk's setup page at `dashboard.clerk.com/apps/setup/convex` pre-populates it).
    - **Verify the template is named exactly `convex`** (lowercase, no suffix). Convex's own docs flag "failing to name the JWT template `convex`" as the single most common Clerk misconfiguration.
    - Leave the template's claims at their default — Convex reads the `aud` claim (which the template sets to `"convex"`) and matches it against `applicationID` in `auth.config.ts` (Step 4). Don't add a custom `role` claim — Role lives on the `members` table, not the JWT (see the research doc for why: a confirmed `convex@1.34.0` regression could silently drop custom claims).
-5. Copy your Clerk application's **Frontend API URL** (under **Configure → API Keys**, or the "Domains" screen — looks like `https://verb-noun-00.clerk.accounts.dev` for a Development instance). You'll wire this into Convex in Step 4. Also copy the **Publishable key** from the same screen.
-
-   **Note on Development vs. Production Clerk instances**: this guide uses Clerk's default **Development** instance, which works immediately on Vercel's default `<project>.vercel.app` domain with no DNS setup. Clerk's **Production** instances require you to put your own custom domain in front of both your app and Clerk — useful once you have one, but extra setup this guide doesn't cover (see TODOs at the end).
+5. **Switch to a Production instance and connect your domain.** In the Clerk dashboard, go to **Configure → Domains**, switch from the default Development instance to **Production**, and enter the domain you own (see "What you'll need" above) — Clerk will show you DNS records (typically a few `CNAME`s, e.g. under a `clerk.` subdomain) to add at your domain registrar. Point your Vercel project at this same domain too (Vercel's project **Settings → Domains**) so your app and Clerk agree on one real domain rather than mixing a `vercel.app` URL with a Clerk custom domain. DNS propagation can take anywhere from minutes to a few hours.
+6. Copy your Clerk application's **Frontend API URL** (under **Configure → API Keys**, or the "Domains" screen — now your own domain, e.g. `https://clerk.yourchoir.org`, since you're on Production). You'll wire this into Convex in Step 4. Also copy the **Publishable key** from the same screen.
 
 ## Step 4 — Connect Clerk to Convex, and set up Vercel
 
@@ -75,10 +75,10 @@ export default {
 };
 ```
 
-Set the env var on your **Convex** project (not Vercel — this is backend-only config), using the Frontend API URL from Step 3.5:
+Set the env var on your **Convex** project (not Vercel — this is backend-only config), using the Frontend API URL from Step 3.6:
 
 ```
-npx convex env set CLERK_JWT_ISSUER_DOMAIN https://verb-noun-00.clerk.accounts.dev
+npx convex env set CLERK_JWT_ISSUER_DOMAIN https://clerk.yourchoir.org
 ```
 
 **Careful**: Convex's docs name this variable `CLERK_JWT_ISSUER_DOMAIN`; Clerk's own current docs call the same value `CLERK_FRONTEND_API_URL`. Both describe the identical `auth.config.ts` shape and value — pick one name (this guide uses Convex's), set it consistently, and re-check both vendors' docs if auth fails with "no auth provider found matching the given token."
@@ -100,7 +100,7 @@ Run `npx convex dev` (or `npx convex deploy` once you have a `prod` deployment) 
    |---|---|---|
    | `CONVEX_DEPLOY_KEY` | a **Production** deploy key from your Convex project (Convex dashboard → your project → switch to the `prod` deployment → **Settings → Deploy Keys** → generate one; copy it immediately, it's shown once) | Production |
    | `VITE_CONVEX_URL` | your Convex project's **production** deployment URL (`https://<your-project>.convex.cloud`, prod deployment — not the dev one) | Production (and Preview, if you want PR previews to work) |
-   | `VITE_CLERK_PUBLISHABLE_KEY` | the Publishable key from Step 3.5 | Production (and Preview) |
+   | `VITE_CLERK_PUBLISHABLE_KEY` | the Publishable key from Step 3.6 | Production (and Preview) |
 
    The exact `VITE_`-prefixed variable names above follow the standard Vite+Convex+Clerk convention (Vite only exposes env vars prefixed `VITE_` to client code) but aren't yet confirmed against real app code in this repo — see TODOs.
 
@@ -112,12 +112,22 @@ Run `npx convex dev` (or `npx convex deploy` once you have a `prod` deployment) 
 
 ## Step 6 — Verify it works
 
-1. Open the URL Vercel gives your project (`https://<your-project>.vercel.app`).
-2. Per the current (still-draft, unconfirmed) route map in `docs/architecture/frontend-routes.md`, you should land on `/` — a home page showing your choir's name (from the `choirSettings` singleton — see TODOs on how that gets its first value) and a sign-in affordance.
+1. Open your domain (from "What you'll need") — Vercel serves the app there once DNS resolves.
+2. Per the route map in `docs/architecture/frontend-routes.md`, an unauthenticated visit lands you on `/public/events`.
 3. Go to `/sign-in` and sign in with Google or create a username/password account. This should create your `members` record on first login (create-on-first-login pattern, per the auth research) — you should see yourself listed if you can reach `/members`.
-4. **You'll land as a Chorister, not an Admin** — see the first-admin TODO below. You will not be able to reach Director/Admin-only management views until that's resolved.
+4. **You'll land as a Chorister, not an Admin.** See Step 7 — this is expected and part of the intended bootstrap flow, not a bug.
 
-If any of this fails, the most likely culprits, in order: Clerk JWT template not literally named `convex`; `CLERK_JWT_ISSUER_DOMAIN` value mismatched or using the wrong (dev vs. prod) Clerk instance's Frontend API URL; `VITE_CONVEX_URL` pointing at your `dev` deployment instead of `prod`.
+If any of this fails, the most likely culprits, in order: Clerk JWT template not literally named `convex`; `CLERK_JWT_ISSUER_DOMAIN` value mismatched or using the wrong Clerk instance's Frontend API URL; `VITE_CONVEX_URL` pointing at your `dev` deployment instead of `prod`.
+
+## Step 7 — Become an Admin (proposed, pending confirmation)
+
+New Members default to Role `chorister` on first login (per the auth research, so nobody can self-assign elevated access) — but that leaves nobody able to reach Director/Admin-only views on a brand-new deployment. Proposed one-time bootstrap: a Convex `internalMutation` (callable only via the CLI's deploy key, never from client code) that promotes one Member to Admin, and refuses to run if the `members` table already has an Admin — so it's safe to leave in the codebase rather than something to remember to delete.
+
+```
+npx convex run members:bootstrapFirstAdmin '{"email":"you@yourchoir.org"}' --prod
+```
+
+Flagging this as **proposed, not yet decided** — see the open question below.
 
 ---
 
@@ -142,8 +152,8 @@ Vercel is the recommended path (native Convex build-command integration, and it'
 ## Open questions / TODOs for the human
 
 1. **No app scaffold exists yet.** `package.json`, frontend source, and `convex/` functions beyond `schema.ts` (including `auth.config.ts` itself) aren't in the repo as of this draft. Every command in this guide (`npm install`, `npm run dev`/`build`/`check`, the `auth.config.ts` shape) is the documented *target* shape from the architecture docs, not yet verified against real code. Worth re-reviewing this guide once that scaffold lands.
-2. **First-admin bootstrap is unspecified.** New Members default to Role `chorister` on first login (per the auth research's recommendation, to avoid self-assigned elevated access). No ticket says how the *first* Member on a brand-new deployment becomes Admin, since there's no existing Admin to promote them. Needs a decision — options include a one-time seed script that sets the first-ever Member to Admin, or documenting a manual edit via the Convex dashboard's data browser as the sanctioned bootstrap step.
-3. **Frontend routes (#6) and public/private auth architecture (#7) are both still open**, and #6's route map explicitly depends on #7's unresolved routing mechanics. The "verify it works" step above references `/`, `/sign-in`, `/members` from the current draft route table — these paths may still change.
-4. **Clerk Development instance + Vercel's default domain, not a custom domain**, is the path this guide documents, to avoid requiring a self-hoster to already own/configure DNS. This mirrors an already-open question in `docs/architecture/ci-cd-and-testing.md` (custom-domain handling for Clerk, currently only "solved" for post-merge production E2E, not for self-hosting generally) — worth a joint decision on whether v1's setup guide should push self-hosters toward a Production Clerk instance + custom domain instead.
+2. **First-admin bootstrap (Step 7) is a proposal, not a confirmed decision.** Needs sign-off on the approach (a guarded `internalMutation`, CLI-only, refuses to run if an Admin already exists) before it's real — flagging here rather than treating Step 7 as settled.
+3. **Frontend routes (#6) and public/private auth architecture (#7) have both been resolved since the first draft of this guide** — #6's route map now reflects #7's `/public/...` prefix decision. Re-verify Step 6's paths once the actual frontend scaffold lands, since the route map itself is still a design doc, not built code.
+4. **Custom domain + Clerk Production is now required** (Step 3.5), not optional — resolved after fact-checking Clerk's own docs (Development instances are capped at 100 users and explicitly unsupported for production use). This adds real setup steps (DNS) and a small recurring cost (domain registration) that earlier drafts of this guide didn't have.
 5. **Bulk-import of the existing ~1000-song library (#8, open) is out of scope here.** A freshly set-up instance starts with an empty Music Library; importing the existing library is a separate, not-yet-built tool.
 6. **Frontend env var names** (`VITE_CONVEX_URL`, `VITE_CLERK_PUBLISHABLE_KEY`) are a reasonable convention but not yet confirmed against real app code — double-check once the frontend scaffold (see TODO 1) exists.
