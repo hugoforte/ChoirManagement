@@ -39,3 +39,10 @@ _Avoid_: Rehearsal (too narrow — not all Events are rehearsals)
 **RSVP**:
 A Member's response to an Event: Yes, No, or Maybe. Distinct from Attendance (whether they actually showed up), which is not yet modeled.
 _Avoid_: Attendance, Response
+
+**Setlist**:
+The ordered list of Pieces attached to a single Event. Not a standalone, reusable entity — a Setlist belongs to exactly one Event.
+_Avoid_: Program (as a synonym — "program order" is fine as plain English, but the entity is a Setlist)
+
+**Visibility**:
+Whether an Event is Public (browsable on the public website without an account — metadata and Setlist piece titles only, never files or RSVPs) or Private (Members only, the default).
