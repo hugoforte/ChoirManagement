@@ -1,0 +1,23 @@
+name: PR checks
+
+on:
+  pull_request:
+    branches: [main]
+
+# PROTOTYPE — draft for wayfinder ticket #5, references scripts/deployments that
+# don't exist yet (no convex/ or frontend code in the repo). Shape to react to,
+# not to run. See docs/architecture/ci-cd-and-testing.md for the reasoning.
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck   # tsc --noEmit
+      - run: npm run lint        # eslint
+      - run: npm test            # vitest (unit + convex-test)

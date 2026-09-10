@@ -1,0 +1,45 @@
+name: Deploy to prod
+
+on:
+  push:
+    branches: [main]
+
+# PROTOTYPE — for a self-hoster's OWN fork/clone, not the upstream repo (see
+# deploy-demo.yml for the maintainer-run public demo). Deploys this Choir's
+# Convex prod deployment and builds the frontend; where the frontend build
+# gets hosted is left to the self-hoster (see setup guide, ticket #4) — this
+# job just produces the artifact and pushes Convex functions.
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+      - name: Deploy Convex functions to prod
+        run: npx convex deploy --prod
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          VITE_CONVEX_URL: ${{ secrets.VITE_CONVEX_URL }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist/
+      # Self-hoster wires their own step here to push dist/ to wherever they
+      # host static files (see setup guide, ticket #4) — deliberately not
+      # prescribed here.
