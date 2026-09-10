@@ -1,0 +1,29 @@
+name: CI checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# PROTOTYPE — draft for wayfinder ticket #5, references scripts that don't
+# exist yet (no convex/ or frontend code in the repo). Shape to react to, not
+# to run. See docs/architecture/ci-cd-and-testing.md.
+#
+# Actual deploy is NOT done here: Vercel's own git integration deploys the
+# frontend + Convex functions together (Build Command: `npx convex deploy
+# --cmd 'npm run build'`, per docs.convex.dev/production/hosting/vercel).
+# This workflow is validation only.
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run check   # tsc -p convex --noEmit && tsc -p . --noEmit && vite build
+      - run: npm test        # vitest (unit + convex-test)
