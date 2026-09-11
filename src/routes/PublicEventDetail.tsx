@@ -16,7 +16,7 @@ export default function PublicEventDetail() {
     return (
       <div className="mx-auto max-w-2xl p-8">
         <p>This Event is private.</p>
-        <Link to="/sign-in" className="underline">
+        <Link to="/sign-in" className="text-brand-600 underline hover:text-brand-700">
           Sign in to view it
         </Link>
       </div>
@@ -33,7 +33,7 @@ export default function PublicEventDetail() {
       {event.description && <p className="mt-4">{event.description}</p>}
       {event.youtubeUrl && (
         <p className="mt-4">
-          <a href={event.youtubeUrl} className="underline">
+          <a href={event.youtubeUrl} className="text-brand-600 underline hover:text-brand-700">
             Watch on YouTube
           </a>
         </p>

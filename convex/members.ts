@@ -83,3 +83,26 @@ export const bootstrapFirstAdmin = internalMutation({
     return null;
   },
 });
+
+// CLI-only ops utility (generalizes bootstrapFirstAdmin): set any existing
+// Member's Role without going through /members/manage (#12, not built yet).
+// Genuinely useful past that point too — a self-hoster fixing a Role by
+// hand, or setting up test accounts for authenticated E2E fixtures.
+export const setMemberRole = internalMutation({
+  args: {
+    email: v.string(),
+    role: v.union(v.literal("admin"), v.literal("director"), v.literal("chorister")),
+  },
+  returns: v.null(),
+  handler: async (ctx, { email, role }) => {
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .unique();
+    if (!member) {
+      throw new Error(`No Member found with email ${email} — sign in to the app first, then retry.`);
+    }
+    await ctx.db.patch("members", member._id, { role });
+    return null;
+  },
+});

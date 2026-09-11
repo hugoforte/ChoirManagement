@@ -12,6 +12,7 @@ import type * as choirSettings from "../choirSettings.js";
 import type * as events from "../events.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as members from "../members.js";
+import type * as pieces from "../pieces.js";
 import type * as public_ from "../public.js";
 
 import type {
@@ -25,6 +26,7 @@ declare const fullApi: ApiFromModules<{
   events: typeof events;
   "lib/auth": typeof lib_auth;
   members: typeof members;
+  pieces: typeof pieces;
   public: typeof public_;
 }>;
 

@@ -10,7 +10,7 @@ export default function PublicEvents() {
     <div className="mx-auto max-w-2xl p-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Upcoming Events</h1>
-        <Link to="/sign-in" className="text-sm underline">
+        <Link to="/sign-in" className="text-sm text-brand-600 underline hover:text-brand-700">
           Sign in
         </Link>
       </div>
@@ -23,7 +23,10 @@ export default function PublicEvents() {
         <ul className="mt-4 space-y-3">
           {events.map((event) => (
             <li key={event._id}>
-              <Link to={`/public/events/${event._id}`} className="font-medium underline">
+              <Link
+                to={`/public/events/${event._id}`}
+                className="font-medium text-brand-600 underline hover:text-brand-700"
+              >
                 {event.title}
               </Link>
               <div className="text-sm text-gray-600">

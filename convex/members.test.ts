@@ -73,3 +73,27 @@ test("bootstrapFirstAdmin refuses an unknown email", async () => {
     t.mutation(internal.members.bootstrapFirstAdmin, { email: "nobody@example.com" }),
   ).rejects.toThrow(/No Member found/);
 });
+
+test("setMemberRole updates an existing Member's role", async () => {
+  const t = convexTest(schema, modules);
+  await t.run(async (ctx) => {
+    await ctx.db.insert("members", {
+      clerkUserId: "user_789",
+      name: "Future Director",
+      email: "director@example.com",
+      role: "chorister",
+    });
+  });
+
+  await t.mutation(internal.members.setMemberRole, { email: "director@example.com", role: "director" });
+
+  const member = await t.run(async (ctx) => await ctx.db.query("members").first());
+  expect(member?.role).toBe("director");
+});
+
+test("setMemberRole refuses an unknown email", async () => {
+  const t = convexTest(schema, modules);
+  await expect(
+    t.mutation(internal.members.setMemberRole, { email: "nobody@example.com", role: "admin" }),
+  ).rejects.toThrow(/No Member found/);
+});

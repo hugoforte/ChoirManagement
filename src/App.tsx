@@ -4,6 +4,9 @@ import Home from "./routes/Home";
 import SignIn from "./routes/SignIn";
 import PublicEvents from "./routes/PublicEvents";
 import PublicEventDetail from "./routes/PublicEventDetail";
+import Library from "./routes/Library";
+import PieceDetail from "./routes/PieceDetail";
+import LibraryManage from "./routes/LibraryManage";
 import NotFound from "./routes/NotFound";
 
 export default function App() {
@@ -13,6 +16,9 @@ export default function App() {
       <Route path="/sign-in" element={<SignIn />} />
       <Route path="/public/events" element={<PublicEvents />} />
       <Route path="/public/events/:eventId" element={<PublicEventDetail />} />
+      <Route path="/library" element={<Library />} />
+      <Route path="/library/manage" element={<LibraryManage />} />
+      <Route path="/library/:pieceId" element={<PieceDetail />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
