@@ -82,7 +82,7 @@ When you're ready to actually put this live for your choir (not before): go to *
 
 ### 4a. Point Convex at your Clerk app
 
-`convex/auth.config.ts` (part of the vertical slice, on `feat/scaffold-vertical-slice` as of this writing — see TODOs for merge status) looks like this:
+`convex/auth.config.ts` (part of the vertical slice, merged to `main`) looks like this:
 
 ```ts
 // convex/auth.config.ts
@@ -115,7 +115,11 @@ Convex picks this up automatically the next time `npx convex dev` pushes (no res
    ```
    This is the whole deploy mechanism — Convex's Vercel integration means there's no separate GitHub Actions deploy job. One command deploys your Convex functions *and* builds the static frontend together (see `docs/architecture/ci-cd-and-testing.md`).
 3. Generate the deploy key **before** wiring env vars: in the Convex dashboard, switch the deployment selector to **production**, go to **Deployment Settings → General → Deploy Keys**, and create one. Convex's current key-creation UI asks you to pick specific permissions rather than issuing a full-access key — check only **`deployment:deploy`** under "Deployment" (that's the one permission `npx convex deploy` needs; leave data/env/logs/backups unchecked). Copy the key immediately, it's shown once.
-4. Add environment variables, in Vercel's project **Settings → Environment Variables**:
+4. **Set `CLERK_JWT_ISSUER_DOMAIN` on the production Convex deployment too — this is easy to miss.** Step 4a set it on your `dev` deployment; `dev` and `production` have entirely separate env vars, and this one bit us during validation (first prod deploy failed with the same "not set" error from Step 2, but for `production` this time). Run:
+   ```
+   npx convex env set CLERK_JWT_ISSUER_DOMAIN https://verb-noun-00.clerk.accounts.dev --prod
+   ```
+5. Add environment variables, in Vercel's project **Settings → Environment Variables**:
 
    | Name | Value | Scope |
    |---|---|---|
@@ -123,8 +127,8 @@ Convex picks this up automatically the next time `npx convex dev` pushes (no res
    | `VITE_CONVEX_URL` | your Convex project's **production** deployment URL (`https://<your-project>.convex.cloud`, prod deployment — not the dev one) | Production (and Preview, if you want PR previews to work) |
    | `VITE_CLERK_PUBLISHABLE_KEY` | the Publishable key from Step 3.6 | Production (and Preview) |
 
-   Confirmed working against the real scaffold with these exact `VITE_`-prefixed names.
-5. **If your very first deploy fails** with a Convex auth error: that's very likely just a chicken-and-egg timing issue, not a real misconfiguration — Vercel may auto-trigger an initial build the moment you import the project, before you've had a chance to set `CONVEX_DEPLOY_KEY`. Once all three env vars above are in place, trigger a fresh deploy (push a commit, or **Deployments → ⋯ → Redeploy**) and it should go through.
+   Confirmed working against the real scaffold with these exact `VITE_`-prefixed names. **After saving each one, it's worth double-checking the value actually stuck** — Vercel's env vars default to "sensitive" (write-only; not even the Vercel CLI can read the value back, so there's no way to verify from outside the dashboard) and it's easy for a value to silently not save on the first attempt. If the deployed app throws `Missing VITE_CLERK_PUBLISHABLE_KEY` (or the Convex URL equivalent) in the browser console despite the variable being listed, don't trust that it's "probably fine" — remove and re-add it.
+6. **If your very first deploy fails** with a Convex auth error: that's very likely just a chicken-and-egg timing issue, not a real misconfiguration — Vercel may auto-trigger an initial build the moment you import the project, before you've had a chance to set `CONVEX_DEPLOY_KEY`. Once all the env vars above are in place (on both Vercel and, per step 4, the production Convex deployment), trigger a fresh deploy (push a commit, or **Deployments → ⋯ → Redeploy**) and it should go through.
 
 ## Step 5 — First deploy
 
