@@ -124,20 +124,23 @@ Before committing code:
 See `docs/architecture/ci-cd-and-testing.md` for the full design and status. Summary:
 
 - `.github/workflows/pr-checks.yml`: `npm run check` + `npm test`, every PR and push to `main`.
-- `.github/workflows/preview-playwright.yml`: `e2e-guest` (every push/PR, against that commit's resolved Vercel deployment — preview normally, production when the push is directly to `main`) and `e2e-authenticated` (push to `main` only; its role-project and demo-reseed steps are currently `if: false` pending role-gated UI, test accounts, and a `seed.ts` — don't flip them on blind).
-- Vercel git integration: builds + deploys on push, no separate deploy workflow.
+- `.github/workflows/preview-playwright.yml`: `e2e-guest` (every push/PR, against that commit's resolved Vercel deployment — preview normally, production when the push is directly to `main`) and `e2e-authenticated` (push to `main` only, against production; `chromium-director` is real — see `e2e/auth.setup.ts` — `chromium-admin`/`chromium-chorister` and demo-reseed are still `if: false` pending role-gated UI and a `seed.ts`).
+- Vercel git integration: builds + deploys on push, no separate deploy workflow. A push to a feature branch gets its own isolated preview deployment (separate URL, separate Convex backend) — production is untouched until the branch merges to `main`.
 - Requires `VERCEL_TOKEN`/`VERCEL_PROJECT_ID`/`VERCEL_TEAM_ID`/`VERCEL_AUTOMATION_BYPASS_SECRET` as GitHub secrets (already set on this repo) — both E2E jobs skip gracefully, not fail, if a self-hoster's fork doesn't have them.
+- **`main` is branch-protected**: PRs required (0 approvals needed — solo project), `check` and `e2e-guest` must pass before merge. Direct pushes to `main` are blocked for this reason, not just by convention.
 
 ## Feature Delivery Workflow
 
 When asked for a feature rather than a small tweak, prefer this end-to-end path:
 
-1. Create or use a dedicated feature branch (or work directly on `main` for small, low-risk changes — this repo doesn't currently require PRs, but use judgment).
+1. Create a feature branch (`git checkout -b feat/<slug>`) — don't push straight to `main`. Feature-sized work deploys to an isolated Vercel preview + Convex backend on that branch, so production is never touched until merge.
 2. Implement the feature and add/update the smallest relevant test coverage (`convex/*.test.ts` for backend logic, an `e2e/` spec for new user-visible behavior — respecting the Clerk/preview-URL constraint above).
 3. Run the validation steps above locally before pushing.
-4. Commit and push.
-5. Confirm the Vercel deployment and both GitHub Actions workflows succeed.
-6. Report back with: the commit/branch reference, the deployment URL, and a concise validation summary (what you ran, what passed).
+4. Commit and push the branch, then open a PR.
+5. Confirm `check` and `e2e-guest` pass on the PR, and manually verify the feature on the PR's preview deployment URL (posted by Vercel's GitHub check) where possible. Authenticated (`chromium-director`, etc.) role coverage can't run against a preview — Clerk doesn't support ephemeral preview URLs — so that only validates post-merge, against production.
+6. Merge the PR once checks are green and preview verification looks right.
+7. Confirm the production Vercel deployment and both GitHub Actions workflows (now running against `main`) succeed post-merge.
+8. Report back with: the PR reference, the production deployment URL, and a concise validation summary (what you ran, what passed, both pre-merge on preview and post-merge on production).
 
 Don't skip tests for user-facing changes unless the environment makes them genuinely impossible (e.g. a Clerk-dependent flow blocked by the preview-URL limitation above).
 

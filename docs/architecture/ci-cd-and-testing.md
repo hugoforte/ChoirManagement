@@ -27,7 +27,9 @@ Vercel is the recommended frontend host (for both the maintainer's demo and, per
 
 ## Merge gate
 
-A PR can merge once: `npm run check` passes, `npm test` passes, and `e2e-guest` passes (when Vercel secrets are configured — see skip behavior above). `e2e-authenticated` isn't a merge gate (it only runs post-merge, against production) — it's a post-merge safety net, not a blocker.
+`main` is GitHub branch-protected: a PR is required to merge (0 approvals needed — solo project), and it can only merge once the `check` and `e2e-guest` status checks pass (when Vercel secrets are configured — see skip behavior above). This is enforced, not just convention — direct pushes to `main` are rejected by GitHub itself. `e2e-authenticated` isn't a merge gate (it only runs post-merge, against production) — it's a post-merge safety net, not a blocker.
+
+Feature branches get their own isolated Vercel preview deployment and Convex backend (see above) — production is untouched until merge, so a PR's preview URL (posted by Vercel's GitHub check) is the place to manually verify a feature before merging, not production.
 
 ## Open questions for you
 
