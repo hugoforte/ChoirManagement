@@ -47,12 +47,17 @@ jobs:
             echo "::notice title=Playwright E2E skipped::Missing VERCEL_TOKEN / VERCEL_PROJECT_ID / VERCEL_TEAM_ID."
           fi
 
-      # Poll Vercel's deployments API for the READY preview matching this
-      # commit SHA (target=preview), same approach as the reference repo.
-      - name: Resolve preview deployment URL
+      # Poll Vercel's deployments API for the READY deployment matching this
+      # commit SHA, same approach as the reference repo. A direct push to
+      # main never produces a "preview" deployment (Vercel deploys it as
+      # production directly) - found this the hard way when this step
+      # spun for the full 10-minute timeout waiting for a preview that
+      # would never exist. Target production for main pushes, preview for
+      # everything else (PRs, other branches).
+      - name: Resolve deployment URL
         id: deployment
         if: steps.secrets.outputs.available == 'true'
-        run: node scripts/ci/resolve-vercel-deployment-url.mjs --target=preview
+        run: node scripts/ci/resolve-vercel-deployment-url.mjs --target=${{ (github.ref == 'refs/heads/main' && github.event_name == 'push') && 'production' || 'preview' }}
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -62,7 +67,7 @@ jobs:
         if: steps.secrets.outputs.available == 'true'
         run: npx playwright install --with-deps chromium
 
-      - name: Run guest E2E project against the preview deployment
+      - name: Run guest E2E project against the resolved deployment
         if: steps.secrets.outputs.available == 'true'
         run: npx playwright test --project=chromium-guest
         env:
