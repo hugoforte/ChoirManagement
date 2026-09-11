@@ -16,9 +16,11 @@ on:
 #   - e2e-guest: every push/PR, against that commit's PREVIEW deployment.
 #     Only the unauthenticated "guest" Playwright project runs here (the
 #     public Events site, ticket #7) — no Clerk login involved.
-#   - e2e-authenticated: push to main only, against PRODUCTION (a stable,
-#     custom-domained URL where Clerk works). Runs the full Admin/Director/
-#     Chorister role projects.
+#   - e2e-authenticated: push to main only, against PRODUCTION. Runs the
+#     Director role project (chromium-director) — signed in via
+#     @clerk/testing's email-based ticket sign-in against a dedicated
+#     "+clerk_test" Clerk account, no UI form automation or real email.
+#     Admin/Chorister projects don't exist yet (no role-gated UI to test).
 #
 # Both jobs skip gracefully (not fail) if the required Vercel secrets aren't
 # configured — matters for contributor forks and self-hosters who haven't
@@ -121,14 +123,20 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
 
-      # Disabled for now (if: false): chromium-admin/director/chorister
-      # aren't defined in playwright.config.ts yet — no role-gated UI or
-      # test Clerk accounts exist to back them. Only chromium-guest is real
-      # (see e2e-guest above). Re-enable once those projects + fixtures
-      # exist, per docs/architecture/ci-cd-and-testing.md.
-      - name: Run Admin/Director/Chorister E2E projects against production
-        if: false && steps.secrets.outputs.available == 'true'
-        run: npx playwright test --project=chromium-admin --project=chromium-director --project=chromium-chorister
+      # chromium-admin/chromium-chorister still don't exist (no admin- or
+      # chorister-only UI to test against yet) — only chromium-director is
+      # wired up so far, backed by a dedicated "+clerk_test" Clerk account
+      # (e2e/auth.setup.ts). Add the other two roles' projects + secrets
+      # here once there's role-gated UI worth testing for them.
+      - name: Run Director E2E project against production
+        if: steps.secrets.outputs.available == 'true'
+        run: npx playwright test --project=chromium-director
         env:
           PLAYWRIGHT_BASE_URL: ${{ steps.deployment.outputs.deployment_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          # Publishable, not secret — client bundles ship it in every page
+          # load already. @clerk/testing's clerkSetup() reads it from this
+          # exact env var name as one of its fallbacks.
+          VITE_CLERK_PUBLISHABLE_KEY: pk_test_bGVuaWVudC1vcmNhLTUwNzkuY2xlcmsuYWNjb3VudHMuZGV2JA
+          E2E_DIRECTOR_EMAIL: ${{ secrets.E2E_DIRECTOR_EMAIL }}

@@ -1,11 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// Only chromium-guest is real right now — no role-gated UI or test Clerk
-// accounts exist yet to back chromium-admin/director/chorister projects.
-// See docs/architecture/ci-cd-and-testing.md for the plan; the workflow
-// steps that would use those projects are deliberately disabled
-// (.github/workflows/preview-playwright.yml) until they exist, rather than
-// referencing projects that don't.
+// chromium-guest is Clerk-free. chromium-director signs in once (the
+// "setup" project, e2e/auth.setup.ts) via @clerk/testing's email-based
+// ticket sign-in against a dedicated "+clerk_test" Clerk account, then
+// reuses the saved storageState — no UI form automation, no real email.
+// chromium-admin/chromium-chorister don't exist yet (no admin/chorister-only
+// UI to test against). See docs/architecture/ci-cd-and-testing.md.
 
 const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 const bypassHeaders = bypassSecret
@@ -30,6 +30,16 @@ export default defineConfig({
     {
       name: "chromium-guest",
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "setup",
+      testMatch: /auth\.setup\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "chromium-director",
+      use: { ...devices["Desktop Chrome"], storageState: ".auth/director.json" },
+      dependencies: ["setup"],
     },
   ],
 });
