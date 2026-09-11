@@ -3,6 +3,7 @@ dist/
 .vite/
 .env.local
 .env
+.env.test
 *.local
 .vercel
 playwright-report/
