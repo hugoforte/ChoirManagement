@@ -108,22 +108,23 @@ Convex picks this up automatically the next time `npx convex dev` pushes (no res
 
 ### 4b. Create the Vercel project
 
-1. Sign up / log in at [vercel.com](https://vercel.com), then **Add New → Project**, and import your GitHub fork.
-2. Framework preset: Vite (Vercel should auto-detect this once the frontend scaffold exists — see TODOs).
-3. Override the **Build Command** to:
+1. Sign up / log in at [vercel.com](https://vercel.com), then **Add New → Project**, and import your GitHub fork. Vercel auto-detects the **Vite** framework preset correctly — confirmed against the real scaffold, no manual override needed there.
+2. Override the **Build Command** (**Settings → Build and Deployment**, toggle "Override" on) to:
    ```
    npx convex deploy --cmd 'npm run build'
    ```
    This is the whole deploy mechanism — Convex's Vercel integration means there's no separate GitHub Actions deploy job. One command deploys your Convex functions *and* builds the static frontend together (see `docs/architecture/ci-cd-and-testing.md`).
+3. Generate the deploy key **before** wiring env vars: in the Convex dashboard, switch the deployment selector to **production**, go to **Deployment Settings → General → Deploy Keys**, and create one. Convex's current key-creation UI asks you to pick specific permissions rather than issuing a full-access key — check only **`deployment:deploy`** under "Deployment" (that's the one permission `npx convex deploy` needs; leave data/env/logs/backups unchecked). Copy the key immediately, it's shown once.
 4. Add environment variables, in Vercel's project **Settings → Environment Variables**:
 
    | Name | Value | Scope |
    |---|---|---|
-   | `CONVEX_DEPLOY_KEY` | a **Production** deploy key from your Convex project (Convex dashboard → your project → switch to the `prod` deployment → **Settings → Deploy Keys** → generate one; copy it immediately, it's shown once) | Production |
+   | `CONVEX_DEPLOY_KEY` | the deploy key from step 3 | Production |
    | `VITE_CONVEX_URL` | your Convex project's **production** deployment URL (`https://<your-project>.convex.cloud`, prod deployment — not the dev one) | Production (and Preview, if you want PR previews to work) |
    | `VITE_CLERK_PUBLISHABLE_KEY` | the Publishable key from Step 3.6 | Production (and Preview) |
 
-   The exact `VITE_`-prefixed variable names above follow the standard Vite+Convex+Clerk convention (Vite only exposes env vars prefixed `VITE_` to client code) but aren't yet confirmed against real app code in this repo — see TODOs.
+   Confirmed working against the real scaffold with these exact `VITE_`-prefixed names.
+5. **If your very first deploy fails** with a Convex auth error: that's very likely just a chicken-and-egg timing issue, not a real misconfiguration — Vercel may auto-trigger an initial build the moment you import the project, before you've had a chance to set `CONVEX_DEPLOY_KEY`. Once all three env vars above are in place, trigger a fresh deploy (push a commit, or **Deployments → ⋯ → Redeploy**) and it should go through.
 
 ## Step 5 — First deploy
 
