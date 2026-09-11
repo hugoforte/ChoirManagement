@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { Navigate, Link } from "react-router-dom";
-import { useAuth } from "@clerk/clerk-react";
+import { useAuth, SignOutButton } from "@clerk/clerk-react";
 import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
@@ -51,7 +51,12 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
 
   return (
     <div className="mx-auto max-w-2xl p-8">
-      <h1 className="text-2xl font-bold">{choirSettings?.name ?? "ChoirManagement"}</h1>
+      <div className="flex items-baseline justify-between">
+        <h1 className="text-2xl font-bold">{choirSettings?.name ?? "ChoirManagement"}</h1>
+        <SignOutButton>
+          <button className="text-sm underline">Sign out</button>
+        </SignOutButton>
+      </div>
       <p className="mt-1 text-gray-600">Welcome, {viewer.name}.</p>
 
       <h2 className="mt-8 font-semibold">Upcoming Events</h2>

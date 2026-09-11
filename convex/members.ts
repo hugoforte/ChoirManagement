@@ -13,11 +13,15 @@ export const viewer = query({
   },
 });
 
-// Create-on-first-login (see docs/research/convex-clerk-integration-pattern.md).
-// The frontend calls this once after sign-in; it's a no-op if the Member
-// already exists. New Members always start as "chorister" — nobody can
-// self-assign elevated access (see Step 7 of docs/guides/self-hosting.md
-// for how the very first Admin gets promoted).
+// Create-on-first-login, sync-on-every-login (see
+// docs/research/convex-clerk-integration-pattern.md). The frontend calls
+// this once after sign-in. New Members always start as "chorister" —
+// nobody can self-assign elevated access (see Step 7 of
+// docs/guides/self-hosting.md for how the very first Admin gets promoted).
+// Role is never touched here on an existing Member, only name/email — this
+// exists so a profile change on Clerk's side (or a JWT-claims fix made
+// after someone's first login) actually reaches the members table, instead
+// of a stale name/email sitting there forever.
 export const ensureCurrentMember = mutation({
   args: {},
   returns: v.id("members"),
@@ -25,16 +29,24 @@ export const ensureCurrentMember = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not signed in");
 
+    const name = identity.name ?? identity.email ?? "New Member";
+    const email = identity.email ?? "";
+
     const existing = await ctx.db
       .query("members")
       .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", identity.tokenIdentifier))
       .unique();
-    if (existing) return existing._id;
+    if (existing) {
+      if (existing.name !== name || existing.email !== email) {
+        await ctx.db.patch("members", existing._id, { name, email });
+      }
+      return existing._id;
+    }
 
     return await ctx.db.insert("members", {
       clerkUserId: identity.tokenIdentifier,
-      name: identity.name ?? identity.email ?? "New Member",
-      email: identity.email ?? "",
+      name,
+      email,
       role: "chorister",
     });
   },

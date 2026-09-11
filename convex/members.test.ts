@@ -3,9 +3,30 @@ import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 
 import schema from "./schema";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 const modules = import.meta.glob("./**/*.ts");
+
+test("ensureCurrentMember creates on first login, syncs name/email on later logins", async () => {
+  const t = convexTest(schema, modules);
+  const identity = { subject: "user_abc", issuer: "https://example.clerk.accounts.dev" };
+
+  const id1 = await t
+    .withIdentity({ ...identity, name: "Old Name", email: "old@example.com" })
+    .mutation(api.members.ensureCurrentMember, {});
+
+  // Same underlying identity, but the JWT now carries different claims —
+  // e.g. the choir added email/name claims to the JWT template after this
+  // Member's first login. Should patch the existing row, not insert a
+  // second one, and should never touch role.
+  const id2 = await t
+    .withIdentity({ ...identity, name: "New Name", email: "new@example.com" })
+    .mutation(api.members.ensureCurrentMember, {});
+
+  expect(id2).toBe(id1);
+  const member = await t.run(async (ctx) => await ctx.db.get("members", id1));
+  expect(member).toMatchObject({ name: "New Name", email: "new@example.com", role: "chorister" });
+});
 
 test("bootstrapFirstAdmin promotes the given Member", async () => {
   const t = convexTest(schema, modules);
