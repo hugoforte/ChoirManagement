@@ -29,6 +29,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium-guest",
+      testMatch: /public-events\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
     {
@@ -38,6 +39,7 @@ export default defineConfig({
     },
     {
       name: "chromium-director",
+      testMatch: /library-manage\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], storageState: ".auth/director.json" },
       dependencies: ["setup"],
     },
