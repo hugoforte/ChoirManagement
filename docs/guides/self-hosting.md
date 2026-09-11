@@ -62,13 +62,15 @@ Each Choir gets its **own** Convex project and **own** Clerk application — nev
    - Select your organization/app, and **Development** as the instance (matches what you're doing right now).
    - Click **Activate Convex integration** — this creates a JWT template (named `convex`) with the `aud: "convex"` claim wired automatically. You don't have to build this by hand.
    - Once active, the wizard reveals the exact env var and value to add — that's your `CLERK_JWT_ISSUER_DOMAIN` (a Development instance's looks like `https://verb-noun-00.clerk.accounts.dev`).
-5. **Add email and name to the JWT template — the wizard's default does NOT include them.** Verified by actually signing in against a real deployment: without this step, every Member's `name`/`email` come through empty, and `ensureCurrentMember` falls back to a generic "New Member." In the Clerk dashboard, go to **Configure → JWT Templates → convex**, and add to the Claims JSON:
+5. **Add email and name to the session token claims — the wizard's default does NOT include them.** Verified by actually signing in against a real deployment: without this step, every Member's `name`/`email` come through empty, and `ensureCurrentMember` falls back to a generic "New Member." In the Clerk dashboard, go to **Sessions → Customize session token** (current Clerk UI merges what used to be a separately-named JWT template into this one screen — you'll see `"aud": "convex"` already there under **Managed claims: Convex**, confirming this is the right token). Add to the Claims JSON, using the `user.primary_email_address` / `user.full_name` shortcode buttons rather than typing the syntax by hand:
    ```json
    {
+     "aud": "convex",
      "email": "{{user.primary_email_address}}",
      "name": "{{user.full_name}}"
    }
    ```
+   Add the two new lines alongside the existing `"aud": "convex"` — don't replace it.
    Convex's claim mapping is a strict 1:1 on OIDC-standard names — `identity.email` only populates from a claim literally named `email`, `identity.name` only from `name`. Don't add a custom `role` claim, though — Role lives on the `members` table, not the JWT (see `docs/research/convex-clerk-integration-pattern.md`: a confirmed `convex@1.34.0` regression could silently drop custom claims).
 6. Copy your Clerk application's **Frontend API URL** and **Publishable key**, both under **Configure → API Keys**. You'll wire the Frontend API URL into Convex in Step 4, and the Publishable key into your frontend env in Step 4b.
 
