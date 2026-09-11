@@ -2,7 +2,7 @@
 
 ## Instruction Source
 
-Follow `.github/copilot-instructions.md` as the single source of truth for project policy and workflow.
+Follow `AGENTS.md` (repo root) as the single source of truth for project policy and workflow.
 
 <!-- convex-ai-start -->
 
