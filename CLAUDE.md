@@ -1,3 +1,9 @@
+# Claude Instructions
+
+## Instruction Source
+
+Follow `.github/copilot-instructions.md` as the single source of truth for project policy and workflow.
+
 <!-- convex-ai-start -->
 
 This project uses [Convex](https://convex.dev) as its backend.

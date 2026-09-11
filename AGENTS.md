@@ -1,3 +1,7 @@
+## Instruction Source
+
+Follow `.github/copilot-instructions.md` as the single source of truth for project policy, coding rules, and the feature delivery workflow. This file (and the sections below) cover issue-tracker and domain-doc conventions specifically — see `docs/agents/` for detail.
+
 ## Agent skills
 
 ### Issue tracker
