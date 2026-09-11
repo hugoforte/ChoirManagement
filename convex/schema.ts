@@ -17,9 +17,11 @@ export default defineSchema({
   }),
 
   members: defineTable({
-    // Clerk's stable subject/tokenIdentifier for this user — the join key
-    // between a Clerk identity and this record (see
-    // docs/research/convex-clerk-integration-pattern.md).
+    // Clerk's stable tokenIdentifier for this user — the join key between a
+    // Clerk identity and this record (see
+    // docs/research/convex-clerk-integration-pattern.md). Convex's own
+    // guidelines: prefer tokenIdentifier over subject as a global identity
+    // key.
     clerkUserId: v.string(),
     name: v.string(),
     email: v.string(),
@@ -28,7 +30,9 @@ export default defineSchema({
       v.literal("director"),
       v.literal("chorister"),
     ),
-  }).index("by_clerk_user_id", ["clerkUserId"]),
+  })
+    .index("by_clerk_user_id", ["clerkUserId"])
+    .index("by_email", ["email"]),
 
   pieces: defineTable({
     title: v.string(),
