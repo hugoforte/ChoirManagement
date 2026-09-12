@@ -1,7 +1,43 @@
 import { mutation, query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import { getCurrentMember } from "./lib/auth";
+import { getCurrentMember, requireMember, requireRole } from "./lib/auth";
 import schema from "./schema";
+
+const rosterEntry = v.object({
+  _id: v.id("members"),
+  name: v.string(),
+  role: schema.tables.members.validator.fields.role,
+});
+
+// Member-only, and deliberately name+role only — every Member can call
+// this (it backs the /members roster page, not just /members/manage), so
+// email/clerkUserId stay off it regardless of what the frontend route
+// itself gates (see docs/architecture/frontend-routes.md's open question
+// on roster field exposure).
+export const list = query({
+  args: {},
+  returns: v.array(rosterEntry),
+  handler: async (ctx) => {
+    await requireMember(ctx);
+    const members = await ctx.db.query("members").collect();
+    return members.map((m) => ({ _id: m._id, name: m.name, role: m.role }));
+  },
+});
+
+// Admin-only per CONTEXT.md ("Admin: can manage Members, Roles") — see
+// /members/manage's frontend gating in src/routes/MembersManage.tsx.
+export const updateRole = mutation({
+  args: {
+    memberId: v.id("members"),
+    role: schema.tables.members.validator.fields.role,
+  },
+  returns: v.null(),
+  handler: async (ctx, { memberId, role }) => {
+    await requireRole(ctx, ["admin"]);
+    await ctx.db.patch("members", memberId, { role });
+    return null;
+  },
+});
 
 // Returns the current signed-in Member's record, or null if signed out or
 // if this is their first sign-in and ensureCurrentMember hasn't run yet.

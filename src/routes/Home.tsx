@@ -48,6 +48,9 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
         <Link to="/public/events" className="text-brand-600 underline hover:text-brand-700">
           Public Events page
         </Link>
+        <Link to="/members" className="text-brand-600 underline hover:text-brand-700">
+          Member Roster
+        </Link>
         {isAdmin(viewer) && (
           <Link to="/settings" className="text-brand-600 underline hover:text-brand-700">
             Settings
