@@ -138,13 +138,14 @@ jobs:
       # seed:preview via --preview-run when it provisions the branch's backend
       # (see vercel.json), which creates demo content plus one Member per Role.
       #
-      # chromium-admin/chromium-chorister still don't exist (no admin- or
-      # chorister-only UI to test against yet) — only chromium-director is
-      # wired up so far. Their Clerk accounts and seeded Member rows already
-      # exist, so adding them is just a Playwright project plus specs.
-      - name: Run Director E2E project against the preview deployment
+      # chromium-chorister still doesn't exist (no chorister-only UI to test
+      # against yet). chromium-director and chromium-admin's Clerk accounts
+      # and seeded Member rows already exist on every preview — each has its
+      # own setup project (e2e/auth.setup.ts, e2e/auth-admin.setup.ts) so a
+      # broken account for one Role can't block the other's E2E.
+      - name: Run Director + Admin E2E projects against the preview deployment
         if: steps.secrets.outputs.available == 'true'
-        run: npx playwright test --project=chromium-director
+        run: npx playwright test --project=chromium-director --project=chromium-admin
         env:
           PLAYWRIGHT_BASE_URL: ${{ steps.deployment.outputs.deployment_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}

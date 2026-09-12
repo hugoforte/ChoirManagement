@@ -45,3 +45,7 @@ export function MemberGate({
 export function canManage(viewer: Doc<"members">): boolean {
   return viewer.role === "admin" || viewer.role === "director";
 }
+
+export function isAdmin(viewer: Doc<"members">): boolean {
+  return viewer.role === "admin";
+}
