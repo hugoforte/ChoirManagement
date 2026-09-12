@@ -59,11 +59,23 @@ function issuerFromPublishableKey(pk) {
 const issuer = issuerFromPublishableKey(publishableKey);
 const clerkClient = createClerkClient({ secretKey });
 
-// "+clerk_test" addresses never trigger real email delivery, and Clerk always
-// accepts the fixed code 424242 for them — required for unattended runs.
+// Kept deliberately short and typo-proof, because a human signs in with these
+// by hand to review a preview (often on a phone).
+//
+// The "+clerk_test" suffix is the one non-negotiable part: it's what makes
+// Clerk skip real email delivery and always accept the code 424242, which
+// unattended E2E needs — and it also avoids the "new device" email
+// verification that would otherwise interrupt a manual sign-in.
+// example.com is IANA-reserved for exactly this purpose. Note a bare
+// two-letter TLD like "a.a" is rejected (form_param_format_invalid).
 function emailForRole(role) {
-  return `e2e-${role}+clerk_test@hugoforte.com`;
+  return `${role}+clerk_test@example.com`;
 }
+
+// One character. Clerk's password policy on this instance demands 15+, so this
+// only works via skipPasswordChecks below. Safe because these accounts exist
+// only on throwaway preview backends — see docs/guides/setup-automation-notes.md.
+const TEST_PASSWORD = "a";
 
 async function ensureClerkUser(email, firstName) {
   const found = await clerkClient.users.getUserList({ emailAddress: [email] });
@@ -71,7 +83,8 @@ async function ensureClerkUser(email, firstName) {
   console.log(`  creating Clerk user ${email}`);
   return await clerkClient.users.createUser({
     emailAddress: [email],
-    password: `${email.split("@")[0]}-Test-2026!`,
+    password: TEST_PASSWORD,
+    skipPasswordChecks: true,
     firstName,
   });
 }
@@ -106,7 +119,7 @@ function upsertMember({ clerkUserId, name, email, role }) {
 const targets = ROLES.map((role) => ({
   role,
   email: emailForRole(role),
-  name: `E2E ${role[0].toUpperCase()}${role.slice(1)}`,
+  name: `Test ${role[0].toUpperCase()}${role.slice(1)}`,
 }));
 
 // --extra <role>:<email> seeds a real person (e.g. the maintainer reviewing a

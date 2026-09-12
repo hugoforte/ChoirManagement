@@ -70,10 +70,11 @@ command dies with `Invalid flags supplied to RegExp constructor 'v'`.
 | Create application / dev instance | **[HUMAN]** dashboard | |
 | Get publishable + secret keys | **[CLI]** `npx clerk env pull --instance dev --file .env.test` | **`clerk auth login` only works on the machine running the browser** — it binds a `127.0.0.1:<port>` OAuth callback, so an agent sandboxed away from that browser can never complete the redirect. (Vercel's device-code flow has no such problem.) |
 | Add `email` / `name` JWT claims | **[HUMAN]** dashboard → Sessions → "Customize session token" | Not the older "JWT Templates" screen. Without it `identity.email`/`identity.name` are undefined and Member rows get blank names. |
-| Create test users, one per Role | **[CLI]** `node scripts/e2e/seed-role-members.mjs` | Creates any missing user via `@clerk/backend`'s `users.createUser`; needs `CLERK_SECRET_KEY`. |
+| Create test users, one per Role | **[CLI]** `node scripts/e2e/seed-role-members.mjs` | Creates any missing user via `@clerk/backend`'s `users.createUser`; needs `CLERK_SECRET_KEY`. Accounts are `<role>+clerk_test@example.com` with password `a` — deliberately trivial to type by hand on a phone. |
 | Derive the issuer without an API call | **[CLI]** base64-decode the publishable key | `pk_test_<base64 of "host$">` → `https://<host>`. Lets token identifiers be assembled offline. |
 | Bypass CAPTCHA / bot protection in tests | **[CLI]** `@clerk/testing`'s `clerkSetup()` + `setupClerkTestingToken()` | `clerkSetup()` reads the publishable key from `VITE_CLERK_PUBLISHABLE_KEY` (one of several fallbacks) and mints a testing token from `CLERK_SECRET_KEY`. |
 | Sign in with no password and no OTP | **[CLI]** `clerk.signIn({ page, emailAddress })` | Backend-API "ticket" strategy: looks the user up, mints a sign-in token, injects it into the client SDK. No UI form. Use a `+clerk_test` address — Clerk never sends real mail for those and always accepts the code `424242`. |
+| Use a 1-character password | **[CLI]** `createUser({ password: "a", skipPasswordChecks: true })` | Verified. Without `skipPasswordChecks` **this instance demands 15+ characters** (stricter than Clerk's 8-char default). Note the email domain still has to look plausible — `x@a.a` is rejected (`form_param_format_invalid`), `@example.com` is fine. |
 | Custom domain / production instance | **[HUMAN]** dashboard + DNS | Only for a real launch — see `self-hosting.md`. |
 
 **On preview URLs**: Clerk *development* keys (`pk_test_`/`sk_test_`) work on arbitrary origins,
@@ -115,8 +116,8 @@ this repo was a misdiagnosis of preview builds that were failing for unrelated r
 3. The new deployment inherits `CLERK_JWT_ISSUER_DOMAIN`, `ALLOW_DEMO_SEED` and
    `SEED_ROLE_MEMBERS` from the **preview-type project defaults** — no per-deployment setup.
 4. `--preview-run seed:preview` seeds demo content **and one Member per Role**.
-5. Anyone can sign in as `e2e-admin+clerk_test@hugoforte.com` (or `-director`, `-chorister`) and
-   already hold that Role.
+5. Anyone can sign in as `admin+clerk_test@example.com` (or `director+…`, `chorister+…`) with
+   password `a` and already hold that Role.
 
 Why seeding a Member works with **no change to the auth path**: `members.ensureCurrentMember`
 matches on `clerkUserId` and, for an existing row, patches only name/email — never `role`. So a
@@ -166,10 +167,9 @@ Everything else above is scriptable today.
 - `VITE_CONVEX_URL` exists as a project env var on **production + preview** with an **empty
   value**. Harmless (`convex deploy` injects the real URL into the build subprocess, which wins)
   but confusing; a candidate for deletion once confirmed unused.
-- The `staging` deployment (`formal-ibex-796`) and its deploy key are now **unused** — nothing has
-  pointed at them since preview builds moved to per-branch backends. Safe to delete; kept for the
-  moment as a fallback.
-- Two preview deploy keys exist (`vercel-preview`, `vercel-preview-active`); only the latter is
-  wired into Vercel. The former should be deleted.
-- `e2e-authenticated` still runs only post-merge against production. Now that Clerk is confirmed
-  working on previews, it could run on the PR itself against the branch's own seeded backend.
+- **Production holds two orphaned Member rows** (`e2e-director@hugoforte.com`,
+  `e2e-director+clerk_test@hugoforte.com`, both `director`). Their Clerk accounts have been
+  deleted, so nobody can authenticate as them — the rows are inert, not an access path. They
+  can't be removed yet because `members.removeMemberByEmail` only reaches production once this
+  branch merges (deploying branch code to production out-of-band would be worse). **Delete them
+  right after merge.**

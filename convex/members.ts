@@ -106,3 +106,24 @@ export const setMemberRole = internalMutation({
     return null;
   },
 });
+
+// CLI-only cleanup counterpart to setMemberRole: removes a Member row by
+// email. Exists because E2E test accounts were once granted Roles on the
+// production deployment (they now live only on throwaway preview backends),
+// and leaving a guessable account with write access on a publicly reachable
+// production URL is not something to just document and move on from.
+export const removeMemberByEmail = internalMutation({
+  args: { email: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { email }) => {
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .unique();
+    if (!member) {
+      throw new Error(`No Member found with email ${email}.`);
+    }
+    await ctx.db.delete("members", member._id);
+    return null;
+  },
+});
