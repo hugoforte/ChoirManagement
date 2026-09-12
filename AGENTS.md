@@ -68,10 +68,12 @@ ChoirManagement/
 │   ├── adr/                         # Architecture decision records
 │   ├── architecture/                # CI/CD design, schema notes, frontend route map
 │   ├── guides/self-hosting.md       # Step-by-step self-hosting walkthrough
+│   ├── guides/setup-automation-notes.md  # What's automatable per service, + traps (#10)
 │   ├── research/                    # Point-in-time research docs
 │   └── agents/                      # Issue tracker + domain-doc conventions for agents
 │
 ├── scripts/ci/                      # CI helper scripts (e.g. Vercel deployment URL resolver)
+├── scripts/e2e/                     # Clerk test users + per-Role Member seeding
 ├── vercel.json                      # Build command + SPA rewrite
 ├── playwright.config.ts
 ├── vitest.config.ts                 # Scoped to convex/**/*.test.ts — don't let it pick up e2e/
@@ -95,7 +97,7 @@ npm run dev   # frontend (vite) + backend (convex dev) together
 ```
 
 ### Production Deployment
-Vercel's git integration deploys on push to `main` — no GitHub Actions deploy job. Build Command is `npx convex deploy --cmd 'npm run build'` (set in Vercel project settings, mirrored by `vercel.json`'s rewrite-only config). See `docs/architecture/ci-cd-and-testing.md` and `docs/guides/self-hosting.md`.
+Vercel's git integration deploys on push to `main` — no GitHub Actions deploy job. Build Command lives in `vercel.json` (`buildCommand`), versioned rather than set in the Vercel dashboard: `npx convex deploy --cmd 'npm run build' --preview-run seed:preview`. See `docs/architecture/ci-cd-and-testing.md` and `docs/guides/self-hosting.md`.
 
 ## Testing
 
@@ -108,7 +110,9 @@ npm run test:e2e  # playwright test
 Current suite shape:
 
 - `convex/*.test.ts`: convex-test unit tests, using `t.withIdentity()` to simulate authenticated Members.
-- `e2e/public-events.spec.ts`: `chromium-guest` project only — deliberately never touches `/` or anything calling Clerk's `useAuth()`, because Clerk doesn't reliably support ephemeral `vercel.app`-style deployment URLs (confirmed by hitting exactly this in CI, not just documented preemptively). `chromium-admin`/`chromium-director`/`chromium-chorister` projects are designed (see `docs/architecture/ci-cd-and-testing.md`) but not yet built — no role-gated UI or test Clerk accounts exist yet to back them.
+- `e2e/public-events.spec.ts`: the `chromium-guest` project — Clerk-free by design, so it can run anywhere without auth setup. (It was originally scoped this way because this repo believed Clerk couldn't work on ephemeral `vercel.app` URLs; that turned out to be a misdiagnosis of broken preview builds, and Clerk dev keys are verified working on previews. Keeping it Clerk-free is still useful, just not forced.)
+- `e2e/library-manage.spec.ts`: the `chromium-director` project, signed in via `e2e/auth.setup.ts`. `chromium-admin`/`chromium-chorister` aren't built yet — no admin- or chorister-only UI to assert against — but their Clerk accounts and seeded Member rows already exist (`scripts/e2e/seed-role-members.mjs`).
+- Each project is scoped with `testMatch`; without it every project runs every spec, which made `chromium-guest` try to run the director test.
 
 ## Validation Steps
 
@@ -124,20 +128,23 @@ Before committing code:
 See `docs/architecture/ci-cd-and-testing.md` for the full design and status. Summary:
 
 - `.github/workflows/pr-checks.yml`: `npm run check` + `npm test`, every PR and push to `main`.
-- `.github/workflows/preview-playwright.yml`: `e2e-guest` (every push/PR, against that commit's resolved Vercel deployment — preview normally, production when the push is directly to `main`) and `e2e-authenticated` (push to `main` only; its role-project and demo-reseed steps are currently `if: false` pending role-gated UI, test accounts, and a `seed.ts` — don't flip them on blind).
-- Vercel git integration: builds + deploys on push, no separate deploy workflow.
+- `.github/workflows/preview-playwright.yml`: `e2e-guest` (every PR, plus pushes to `main`, against that commit's resolved Vercel deployment) and `e2e-authenticated` (**PRs only**, against that branch's own preview deployment; `chromium-director` is real — see `e2e/auth.setup.ts`). `chromium-admin`/`chromium-chorister` don't exist yet (no admin/chorister-only UI), and the "Reseed demo data" step stays `if: false` on purpose — it would seed *production*, whereas each branch's preview backend seeds itself. Deliberately **not** triggered on `push: "**"`: that fires twice per PR commit and a cancelled duplicate blocks the merge.
+- Vercel git integration: builds + deploys on push, no separate deploy workflow. A push to a feature branch gets its own isolated preview deployment (separate URL, separate Convex backend) — production is untouched until the branch merges to `main`.
 - Requires `VERCEL_TOKEN`/`VERCEL_PROJECT_ID`/`VERCEL_TEAM_ID`/`VERCEL_AUTOMATION_BYPASS_SECRET` as GitHub secrets (already set on this repo) — both E2E jobs skip gracefully, not fail, if a self-hoster's fork doesn't have them.
+- **`main` is branch-protected**: PRs required (0 approvals needed — solo project), `check` and `e2e-guest` must pass before merge. Direct pushes to `main` are blocked for this reason, not just by convention.
 
 ## Feature Delivery Workflow
 
 When asked for a feature rather than a small tweak, prefer this end-to-end path:
 
-1. Create or use a dedicated feature branch (or work directly on `main` for small, low-risk changes — this repo doesn't currently require PRs, but use judgment).
+1. Create a feature branch (`git checkout -b feat/<slug>`) — don't push straight to `main`. Feature-sized work deploys to an isolated Vercel preview + Convex backend on that branch, so production is never touched until merge.
 2. Implement the feature and add/update the smallest relevant test coverage (`convex/*.test.ts` for backend logic, an `e2e/` spec for new user-visible behavior — respecting the Clerk/preview-URL constraint above).
 3. Run the validation steps above locally before pushing.
-4. Commit and push.
-5. Confirm the Vercel deployment and both GitHub Actions workflows succeed.
-6. Report back with: the commit/branch reference, the deployment URL, and a concise validation summary (what you ran, what passed).
+4. Commit and push the branch, then open a PR.
+5. Confirm `check` and `e2e-guest` pass on the PR, then **manually verify the feature on the PR's preview deployment URL** (the branch alias, which follows new commits). Each branch gets its own isolated Convex backend, auto-seeded with demo content and one Member per Role — so sign in as `admin+clerk_test@example.com` (or `director+…`/`chorister+…`), password `a`, and you already hold that Role with nothing to run by hand. Authenticated `chromium-director` E2E runs on the PR against this same backend.
+6. Merge the PR once checks are green and preview verification looks right.
+7. Confirm the production Vercel deployment and both GitHub Actions workflows (now running against `main`) succeed post-merge.
+8. Report back with: the PR reference, the production deployment URL, and a concise validation summary (what you ran, what passed, both pre-merge on preview and post-merge on production).
 
 Don't skip tests for user-facing changes unless the environment makes them genuinely impossible (e.g. a Clerk-dependent flow blocked by the preview-URL limitation above).
 

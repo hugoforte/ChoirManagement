@@ -9,7 +9,10 @@
 const token = process.env.VERCEL_TOKEN;
 const projectId = process.env.VERCEL_PROJECT_ID;
 const teamId = process.env.VERCEL_TEAM_ID;
-const sha = process.env.GITHUB_SHA;
+// TARGET_SHA, not GITHUB_SHA: on a `pull_request` event GITHUB_SHA is a
+// synthetic merge commit (PR head merged into base) that Vercel never builds,
+// so matching on it polls forever. The workflow passes the PR head SHA here.
+const sha = process.env.TARGET_SHA || process.env.GITHUB_SHA;
 const outFile = process.env.GITHUB_OUTPUT;
 
 const targetArg = process.argv.find((arg) => arg.startsWith("--target="));
@@ -22,7 +25,7 @@ if (target !== "preview" && target !== "production") {
   throw new Error(`--target must be "preview" or "production", got: ${target}`);
 }
 if (!sha) {
-  throw new Error("Missing GITHUB_SHA");
+  throw new Error("Missing TARGET_SHA / GITHUB_SHA");
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

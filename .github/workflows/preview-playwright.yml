@@ -1,28 +1,40 @@
 name: Playwright E2E
 
 on:
+  # Deliberately NOT push on "**": a push to a PR branch would fire this
+  # workflow twice for the same commit (once per event), and the two runs
+  # race for the same Vercel deployment — whichever loses sits in the
+  # resolve-deployment-url poll until it trips the 10-minute job timeout and
+  # is cancelled. A cancelled run of a *required* check blocks the merge even
+  # though its twin passed, which is exactly what happened on #15. PR
+  # branches are covered by pull_request; main is covered by push.
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
-# PROTOTYPE — adapted from https://github.com/hugoforte/hugo-tessa-20-years's
+# One in-flight run per ref is enough; a newer commit supersedes an older one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Adapted from https://github.com/hugoforte/hugo-tessa-20-years's
 # preview-playwright.yml. Tests run against a REAL deployed Vercel URL, never
 # a dev server spun up in CI — same philosophy as that repo's config, where
 # PLAYWRIGHT_BASE_URL also drives local runs (defaults to localhost:5173).
 #
-# Split into two jobs because Clerk does not support ephemeral vercel.app
-# preview URLs (needs a custom domain) — see docs/architecture/ci-cd-and-testing.md:
-#   - e2e-guest: every push/PR, against that commit's PREVIEW deployment.
-#     Only the unauthenticated "guest" Playwright project runs here (the
-#     public Events site, ticket #7) — no Clerk login involved.
-#   - e2e-authenticated: push to main only, against PRODUCTION. Runs the
-#     Director role project (chromium-director) — signed in via
-#     @clerk/testing's email-based ticket sign-in against a dedicated
-#     "+clerk_test" Clerk account, no UI form automation or real email.
-#     Admin/Chorister projects don't exist yet (no role-gated UI to test).
+# Both jobs now target the same place on a PR — that branch's own preview
+# deployment, backed by its own auto-seeded Convex backend:
+#   - e2e-guest: the unauthenticated project (public Events site, ticket #7).
+#     Also runs on pushes to main, where it targets production instead.
+#   - e2e-authenticated: chromium-director, signed in via @clerk/testing's
+#     email-based ticket strategy against a "+clerk_test" account. PR-only,
+#     because production deliberately holds no test Member rows.
 #
-# Both jobs skip gracefully (not fail) if the required Vercel secrets aren't
+# They stay two jobs rather than one so a failure says which half broke, and
+# so the guest half still covers production post-merge.
+#
+# Both skip gracefully (not fail) if the required Vercel secrets aren't
 # configured — matters for contributor forks and self-hosters who haven't
 # wired up Vercel/E2E at all.
 
@@ -64,6 +76,9 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          # On pull_request, github.sha is a synthetic merge commit Vercel
+          # never builds — use the PR head SHA so the poll can actually match.
+          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Install Playwright browser
         if: steps.secrets.outputs.available == 'true'
@@ -76,8 +91,13 @@ jobs:
           PLAYWRIGHT_BASE_URL: ${{ steps.deployment.outputs.deployment_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
 
+  # Runs on PRs, against the branch's OWN preview deployment — not against
+  # production. Two reasons: authenticated coverage is far more useful before
+  # a merge than after, and production deliberately holds no test Member rows
+  # any more (the accounts have trivial passwords and production is publicly
+  # reachable, so they exist only on throwaway preview backends).
   e2e-authenticated:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && !github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -98,37 +118,31 @@ jobs:
             echo "::notice title=Playwright E2E skipped::Missing VERCEL_TOKEN / VERCEL_PROJECT_ID / VERCEL_TEAM_ID."
           fi
 
-      - name: Resolve production deployment URL
+      - name: Resolve preview deployment URL
         id: deployment
         if: steps.secrets.outputs.available == 'true'
-        run: node scripts/ci/resolve-vercel-deployment-url.mjs --target=production
+        run: node scripts/ci/resolve-vercel-deployment-url.mjs --target=preview
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          # On pull_request, github.sha is a synthetic merge commit Vercel
+          # never builds — use the PR head SHA so the poll can actually match.
+          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Install Playwright browser
         if: steps.secrets.outputs.available == 'true'
         run: npx playwright install --with-deps chromium
 
-      # Seed data (upstream demo only — a self-hoster's prod deploy has real
-      # data and should NOT run this). Guarded by repository so a self-hoster's
-      # fork skips it even with Vercel secrets configured.
+      # No seeding step: the preview deployment seeds itself. Convex runs
+      # seed:preview via --preview-run when it provisions the branch's backend
+      # (see vercel.json), which creates demo content plus one Member per Role.
       #
-      # Disabled for now (if: false): convex/seed.ts:demo doesn't exist yet.
-      # Re-enable once it's written — don't just flip this back on blind.
-      - name: Reseed demo data
-        if: false && steps.secrets.outputs.available == 'true' && github.repository == 'hugoforte/ChoirManagement'
-        run: npx convex run seed:demo
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-
       # chromium-admin/chromium-chorister still don't exist (no admin- or
       # chorister-only UI to test against yet) — only chromium-director is
-      # wired up so far, backed by a dedicated "+clerk_test" Clerk account
-      # (e2e/auth.setup.ts). Add the other two roles' projects + secrets
-      # here once there's role-gated UI worth testing for them.
-      - name: Run Director E2E project against production
+      # wired up so far. Their Clerk accounts and seeded Member rows already
+      # exist, so adding them is just a Playwright project plus specs.
+      - name: Run Director E2E project against the preview deployment
         if: steps.secrets.outputs.available == 'true'
         run: npx playwright test --project=chromium-director
         env:

@@ -14,6 +14,7 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as members from "../members.js";
 import type * as pieces from "../pieces.js";
 import type * as public_ from "../public.js";
+import type * as seed from "../seed.js";
 
 import type {
   ApiFromModules,
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   members: typeof members;
   pieces: typeof pieces;
   public: typeof public_;
+  seed: typeof seed;
 }>;
 
 /**
