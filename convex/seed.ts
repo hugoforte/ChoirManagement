@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
 import { internalMutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
 // Seeding for non-production deployments (the `staging` deployment behind
@@ -131,5 +132,53 @@ export const upsertRoleMember = internalMutation({
     }
 
     return await ctx.db.insert("members", { clerkUserId, name, email, role });
+  },
+});
+
+// Entry point for `npx convex deploy --preview-run seed:preview`, which Convex
+// runs once against each newly provisioned preview deployment. Does both jobs
+// so a fresh per-branch backend is immediately reviewable and testable:
+// demo content, plus one Member per Role.
+//
+// The Role Members come from the SEED_ROLE_MEMBERS env var (a JSON array) —
+// set as a project-level default for *preview* deployments, so every new
+// preview inherits it without a per-deployment setup step. It holds Clerk
+// token identifiers rather than doing a Clerk lookup, because a Convex
+// mutation can't call Clerk's Backend API; `scripts/e2e/seed-role-members.mjs`
+// resolves the ids and keeps this default in sync.
+//
+// Note Convex does NOT fail the deploy if --preview-run throws, so a broken
+// seed shows up as an empty preview rather than a red build.
+export const preview = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx): Promise<null> => {
+    await ctx.runMutation(internal.seed.demo, {});
+
+    const raw = process.env.SEED_ROLE_MEMBERS;
+    if (!raw) {
+      console.warn("SEED_ROLE_MEMBERS is not set — skipping Role Member seeding.");
+      return null;
+    }
+
+    let entries: unknown;
+    try {
+      entries = JSON.parse(raw);
+    } catch (error) {
+      throw new Error(`SEED_ROLE_MEMBERS is not valid JSON: ${String(error)}`);
+    }
+    if (!Array.isArray(entries)) {
+      throw new Error("SEED_ROLE_MEMBERS must be a JSON array.");
+    }
+
+    for (const entry of entries as Array<Record<string, string>>) {
+      await ctx.runMutation(internal.seed.upsertRoleMember, {
+        clerkUserId: entry.clerkUserId,
+        name: entry.name,
+        email: entry.email,
+        role: entry.role as "admin" | "director" | "chorister",
+      });
+    }
+    return null;
   },
 });

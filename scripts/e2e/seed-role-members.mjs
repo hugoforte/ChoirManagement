@@ -29,8 +29,13 @@ function arg(name) {
 }
 
 const deploymentName = arg("deployment-name");
-if (!deploymentName) {
-  console.error("Missing --deployment-name. Refusing to guess a target deployment.");
+// --publish-default writes the resolved set to the project-level default for
+// *preview* deployments, which is how each newly provisioned per-branch
+// backend gets its Role Members via `--preview-run seed:preview` without any
+// per-deployment setup.
+const publishDefault = process.argv.includes("--publish-default");
+if (!deploymentName && !publishDefault) {
+  console.error("Need --deployment-name (seed a live deployment) and/or --publish-default.");
   process.exit(1);
 }
 
@@ -120,7 +125,12 @@ for (const spec of extras) {
   targets.push({ role, email, name: email.split("@")[0] });
 }
 
-console.log(`Seeding Members into "${deploymentName}" (issuer ${issuer})`);
+const resolved = [];
+console.log(
+  `Resolving Role Members (issuer ${issuer})` +
+    (deploymentName ? ` -> deployment "${deploymentName}"` : "") +
+    (publishDefault ? " -> preview default SEED_ROLE_MEMBERS" : ""),
+);
 for (const t of targets) {
   const isTestAccount = t.email.includes("+clerk_test@");
   let user;
@@ -138,12 +148,29 @@ for (const t of targets) {
     user = found.data[0];
   }
 
-  upsertMember({
-    clerkUserId: `${issuer}|${user.id}`,
-    name: t.name,
-    email: t.email,
-    role: t.role,
-  });
+  const clerkUserId = `${issuer}|${user.id}`;
+  resolved.push({ clerkUserId, name: t.name, email: t.email, role: t.role });
+
+  if (deploymentName) {
+    upsertMember({ clerkUserId, name: t.name, email: t.email, role: t.role });
+  }
   console.log(`  ${t.role.padEnd(9)} ${t.email} -> ${user.id}`);
+}
+
+if (publishDefault) {
+  execFileSync(
+    process.execPath,
+    [
+      convexCli,
+      "env",
+      "default",
+      "set",
+      "SEED_ROLE_MEMBERS",
+      JSON.stringify(resolved),
+      "--type",
+      "preview",
+    ],
+    { stdio: ["ignore", "inherit", "inherit"] },
+  );
 }
 console.log("Done.");
