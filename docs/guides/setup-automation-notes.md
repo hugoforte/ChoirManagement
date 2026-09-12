@@ -52,7 +52,8 @@ creation or consent.
 | Auto-seed a newly provisioned preview | **[CLI]** `npx convex deploy --preview-run <fn>` | Fires **only** when the deploy routes through a *preview* key and provisions a new deployment; silently ignored for deployment-scoped keys. **A throwing seed does not fail the build** — it surfaces as an empty preview, not a red check. |
 | Seed an existing deployment | **[CLI]** `npx convex run seed:demo --deployment-name <name>` | |
 | Inspect data | **[CLI]** `npx convex data <table> --deployment-name <name>` | |
-| Tear down a deployment | **[API]** `POST /v1/deployments/{name}/delete` | No CLI equivalent. |
+| Tear down a deployment | **[API]** `POST /v1/deployments/{name}/delete` | No CLI equivalent. Automated: `.github/workflows/cleanup-preview.yml` runs on `pull_request: closed` and deletes that branch's preview deployment immediately rather than waiting for the 5-day auto-expiry. |
+| List deployments, and match one to a git branch | **[API]** `GET /v1/projects/{id}/list_deployments` | Each entry's `previewIdentifier` field is the exact git branch name for preview-type deployments (`null` for dev/prod) — verified empirically, no need to derive it from the deployment's random name (`content-trout-201`) some other way. |
 
 Limits: **40 deployments per team** on the free plan (300 Pro). Preview deployments count toward
 that cap and are **auto-deleted 5 days** after creation (14 on paid). Preview deployments are a

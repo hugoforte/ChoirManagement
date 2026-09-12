@@ -1,0 +1,67 @@
+name: Clean up preview deployment
+
+# Preview deployments auto-delete after 5 days on their own (14 on paid
+# plans), which is a real safety net — but deleting one the moment its PR
+# closes (merged or not) keeps the project nowhere near the free-plan
+# 40-deployment cap instead of just trusting the multi-day grace period.
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup:
+    # pull_request (not pull_request_target) never receives secrets for a
+    # fork PR, so this can't leak CONVEX_ACCESS_TOKEN to an outside branch —
+    # matches the !fork guard used elsewhere in this repo's workflows.
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete this branch's Convex preview deployment
+        env:
+          CONVEX_ACCESS_TOKEN: ${{ secrets.CONVEX_ACCESS_TOKEN }}
+          CONVEX_PROJECT_ID: "2976703"
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [ -z "$CONVEX_ACCESS_TOKEN" ]; then
+            echo "::notice title=Cleanup skipped::CONVEX_ACCESS_TOKEN not configured."
+            exit 0
+          fi
+          node -e '
+            const token = process.env.CONVEX_ACCESS_TOKEN;
+            const project = process.env.CONVEX_PROJECT_ID;
+            const branch = process.env.BRANCH;
+            const H = { Authorization: `Bearer ${token}` };
+
+            (async () => {
+              const list = await (await fetch(
+                `https://api.convex.dev/v1/projects/${project}/list_deployments`,
+                { headers: H },
+              )).json();
+
+              // previewIdentifier is set to the exact git branch name Convex
+              // provisioned the deployment for (confirmed empirically) — not
+              // derived or guessed from the deployment name, which is an
+              // unrelated random slug (e.g. "content-trout-201").
+              const match = (Array.isArray(list) ? list : []).find(
+                (d) => d.deploymentType === "preview" && d.previewIdentifier === branch,
+              );
+
+              if (!match) {
+                console.log(`No preview deployment found for branch "${branch}" — nothing to clean up.`);
+                return;
+              }
+
+              const res = await fetch(
+                `https://api.convex.dev/v1/deployments/${match.name}/delete`,
+                { method: "POST", headers: H },
+              );
+              if (!res.ok) {
+                throw new Error(`Delete failed (${res.status}): ${await res.text()}`);
+              }
+              console.log(`Deleted preview deployment "${match.name}" for branch "${branch}".`);
+            })().catch((err) => {
+              console.error(err.message);
+              process.exit(1);
+            });
+          '
