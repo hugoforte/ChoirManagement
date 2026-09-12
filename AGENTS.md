@@ -111,7 +111,7 @@ Current suite shape:
 
 - `convex/*.test.ts`: convex-test unit tests, using `t.withIdentity()` to simulate authenticated Members.
 - `e2e/public-events.spec.ts`: the `chromium-guest` project — Clerk-free by design, so it can run anywhere without auth setup. (It was originally scoped this way because this repo believed Clerk couldn't work on ephemeral `vercel.app` URLs; that turned out to be a misdiagnosis of broken preview builds, and Clerk dev keys are verified working on previews. Keeping it Clerk-free is still useful, just not forced.)
-- `e2e/library-manage.spec.ts`: the `chromium-director` project, signed in via `e2e/auth.setup.ts`.
+- `e2e/library-manage.spec.ts` and `e2e/events-manage.spec.ts`: the `chromium-director` project, signed in via `e2e/auth.setup.ts`.
 - `e2e/settings-manage.spec.ts` and `e2e/members-manage.spec.ts`: the `chromium-admin` project, signed in as `admin+clerk_test@example.com` (the same account every preview seeds for manual review — no dedicated secret needed). `chromium-chorister` isn't built yet — no chorister-only UI to assert against — but its Clerk account and seeded Member row already exist (`scripts/e2e/seed-role-members.mjs`).
 - Each project is scoped with `testMatch`; without it every project runs every spec, which made `chromium-guest` try to run the director test.
 

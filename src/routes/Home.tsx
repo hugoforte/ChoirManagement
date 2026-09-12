@@ -36,7 +36,11 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
       ) : (
         <ul className="mt-2 space-y-1">
           {upcoming.map((event) => (
-            <li key={event._id}>{event.title}</li>
+            <li key={event._id}>
+              <Link to={`/events/${event._id}`} className="text-brand-600 underline hover:text-brand-700">
+                {event.title}
+              </Link>
+            </li>
           ))}
         </ul>
       )}
@@ -44,6 +48,9 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
       <nav className="mt-8 flex gap-4 text-sm">
         <Link to="/library" className="text-brand-600 underline hover:text-brand-700">
           Music Library
+        </Link>
+        <Link to="/events" className="text-brand-600 underline hover:text-brand-700">
+          Events
         </Link>
         <Link to="/public/events" className="text-brand-600 underline hover:text-brand-700">
           Public Events page
