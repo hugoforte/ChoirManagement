@@ -21,7 +21,7 @@ setup("authenticate as admin", async ({ page }) => {
   await clerk.signIn({ page, emailAddress: ADMIN_EMAIL });
 
   await page.goto("/");
-  await page.getByText("Welcome,").waitFor();
+  await page.getByRole("heading", { name: "Dashboard" }).waitFor();
 
   await page.context().storageState({ path: adminAuthFile });
 });

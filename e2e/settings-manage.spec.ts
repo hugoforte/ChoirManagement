@@ -14,6 +14,8 @@ test("admin can update the choir name and see it reflected on the home page", as
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
 
+  // The choir name renders in the sidebar brand label, not as a page
+  // heading — Dashboard's <h1> is the static "Dashboard" title.
   await page.goto("/");
-  await expect(page.getByRole("heading", { name })).toBeVisible();
+  await expect(page.getByText(name)).toBeVisible();
 });
