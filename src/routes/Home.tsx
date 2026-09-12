@@ -1,11 +1,11 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { SignOutButton } from "@clerk/clerk-react";
 import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
 import { MemberGate, isAdmin } from "../lib/memberGate";
+import { AppShell, SectionTitle, DateBadge, RSVP_LABEL, RSVP_DOT } from "../design/AppShell";
 
 export default function Home() {
   return <MemberGate>{(viewer) => <HomeContentForMember viewer={viewer} />}</MemberGate>;
@@ -17,53 +17,54 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
   // render would resubscribe the query each time instead of once.
   const now = useMemo(() => Date.now(), []);
   const upcoming = useQuery(api.events.listUpcoming, { now });
+  const myRsvps = useQuery(api.events.myRsvps);
+  const statusByEvent = new Map(myRsvps?.map((r) => [r.eventId, r.status]));
 
   return (
-    <div className="mx-auto max-w-2xl p-8">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold">{choirSettings?.name ?? "ChoirManagement"}</h1>
-        <SignOutButton>
-          <button className="text-sm underline">Sign out</button>
-        </SignOutButton>
-      </div>
-      <p className="mt-1 text-gray-600">Welcome, {viewer.name}.</p>
-
-      <h2 className="mt-8 font-semibold">Upcoming Events</h2>
+    <AppShell
+      choirName={choirSettings?.name ?? "ChoirManagement"}
+      viewerName={viewer.name}
+      showSettings={isAdmin(viewer)}
+    >
+      <SectionTitle eyebrow="Dashboard" title="Upcoming in your programme" />
       {upcoming === undefined ? (
-        <p className="text-gray-500">Loading…</p>
+        <p className="text-stone-500 dark:text-stone-400">Loading…</p>
       ) : upcoming.length === 0 ? (
-        <p className="text-gray-500">Nothing scheduled yet.</p>
+        <p className="text-stone-500 dark:text-stone-400">Nothing scheduled yet.</p>
       ) : (
-        <ul className="mt-2 space-y-1">
-          {upcoming.map((event) => (
-            <li key={event._id}>
-              <Link to={`/events/${event._id}`} className="text-brand-600 underline hover:text-brand-700">
-                {event.title}
-              </Link>
-            </li>
-          ))}
+        <ul className="divide-y divide-stone-200 dark:divide-stone-800">
+          {upcoming.map((event) => {
+            const status = statusByEvent.get(event._id) ?? "no RSVP";
+            return (
+              <li key={event._id} className="flex items-center gap-4 py-4">
+                <DateBadge startsAt={event.startsAt} />
+                <div className="min-w-0 flex-1">
+                  <Link
+                    to={`/events/${event._id}`}
+                    className="truncate font-medium underline decoration-amber-700/30 underline-offset-2 hover:decoration-amber-700 dark:decoration-amber-400/40"
+                  >
+                    {event.title}
+                  </Link>
+                  {event.location && (
+                    <p className="font-sans text-sm text-stone-500 dark:text-stone-400">{event.location}</p>
+                  )}
+                </div>
+                <span className="flex shrink-0 items-center gap-1.5 font-sans text-xs text-stone-500 dark:text-stone-400">
+                  <span className={`h-2 w-2 rounded-full ${RSVP_DOT[status]}`} />
+                  {RSVP_LABEL[status]}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
 
-      <nav className="mt-8 flex gap-4 text-sm">
-        <Link to="/library" className="text-brand-600 underline hover:text-brand-700">
-          Music Library
-        </Link>
-        <Link to="/events" className="text-brand-600 underline hover:text-brand-700">
-          Events
-        </Link>
-        <Link to="/public/events" className="text-brand-600 underline hover:text-brand-700">
-          Public Events page
-        </Link>
-        <Link to="/members" className="text-brand-600 underline hover:text-brand-700">
-          Member Roster
-        </Link>
-        {isAdmin(viewer) && (
-          <Link to="/settings" className="text-brand-600 underline hover:text-brand-700">
-            Settings
-          </Link>
-        )}
-      </nav>
-    </div>
+      <Link
+        to="/events"
+        className="mt-6 inline-block font-sans text-sm font-medium text-amber-800 underline decoration-amber-800/40 underline-offset-4 hover:text-amber-900 dark:text-amber-400 dark:decoration-amber-400/40"
+      >
+        View full events list →
+      </Link>
+    </AppShell>
   );
 }

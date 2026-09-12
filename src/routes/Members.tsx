@@ -4,43 +4,46 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
 import { MemberGate, isAdmin } from "../lib/memberGate";
+import { AppShell, SectionTitle } from "../design/AppShell";
 
 export default function Members() {
   return <MemberGate>{(viewer) => <MembersContent viewer={viewer} />}</MemberGate>;
 }
 
 function MembersContent({ viewer }: { viewer: Doc<"members"> }) {
+  const choirSettings = useQuery(api.choirSettings.get);
   const members = useQuery(api.members.list);
 
   return (
-    <div className="mx-auto max-w-2xl p-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Member Roster</h1>
-        {isAdmin(viewer) && (
-          <Link to="/members/manage" className="text-sm text-brand-600 underline hover:text-brand-700">
-            Manage
-          </Link>
-        )}
-      </div>
+    <AppShell
+      choirName={choirSettings?.name ?? "ChoirManagement"}
+      viewerName={viewer.name}
+      showSettings={isAdmin(viewer)}
+    >
+      <SectionTitle eyebrow="Season" title="Personnel" />
+      {isAdmin(viewer) && (
+        <Link
+          to="/members/manage"
+          className="mb-6 inline-block font-sans text-sm text-amber-800 underline hover:text-amber-900 dark:text-amber-400"
+        >
+          Manage
+        </Link>
+      )}
 
       {members === undefined ? (
-        <p className="mt-4 text-gray-500">Loading…</p>
+        <p className="text-stone-500 dark:text-stone-400">Loading…</p>
       ) : (
-        <ul className="mt-4 space-y-1">
+        <ul className="divide-y divide-stone-200 dark:divide-stone-800">
           {members.map((member) => (
-            <li key={member._id} className="flex items-center justify-between">
+            <li key={member._id} className="flex items-center justify-between py-2.5">
               <span>{member.name}</span>
-              <span className="text-sm capitalize text-gray-600">{member.role}</span>
+              {member.role !== "chorister" && (
+                <span className="font-sans text-xs uppercase tracking-wide text-stone-400">{member.role}</span>
+              )}
             </li>
           ))}
         </ul>
       )}
-
-      <nav className="mt-8">
-        <Link to="/" className="text-sm text-gray-600 underline">
-          Back to dashboard
-        </Link>
-      </nav>
-    </div>
+    </AppShell>
   );
 }
