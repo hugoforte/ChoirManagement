@@ -7,6 +7,8 @@ import PublicEventDetail from "./routes/PublicEventDetail";
 import Library from "./routes/Library";
 import PieceDetail from "./routes/PieceDetail";
 import LibraryManage from "./routes/LibraryManage";
+import Members from "./routes/Members";
+import MembersManage from "./routes/MembersManage";
 import Settings from "./routes/Settings";
 import NotFound from "./routes/NotFound";
 
@@ -20,6 +22,8 @@ export default function App() {
       <Route path="/library" element={<Library />} />
       <Route path="/library/manage" element={<LibraryManage />} />
       <Route path="/library/:pieceId" element={<PieceDetail />} />
+      <Route path="/members" element={<Members />} />
+      <Route path="/members/manage" element={<MembersManage />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="*" element={<NotFound />} />
     </Routes>

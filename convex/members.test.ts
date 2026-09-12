@@ -97,3 +97,78 @@ test("setMemberRole refuses an unknown email", async () => {
     t.mutation(internal.members.setMemberRole, { email: "nobody@example.com", role: "admin" }),
   ).rejects.toThrow(/No Member found/);
 });
+
+const adminIdentity = { subject: "admin_1", issuer: "https://example.clerk.accounts.dev" };
+const choristerIdentity = { subject: "chorister_1", issuer: "https://example.clerk.accounts.dev" };
+
+test("list returns name + role for every Member, without email or clerkUserId", async () => {
+  const t = convexTest(schema, modules);
+  const adminId = await t.run(async (ctx) =>
+    ctx.db.insert("members", {
+      clerkUserId: `${adminIdentity.issuer}|${adminIdentity.subject}`,
+      name: "Admin Member",
+      email: "admin@example.com",
+      role: "admin",
+    }),
+  );
+  await t.run(async (ctx) =>
+    ctx.db.insert("members", {
+      clerkUserId: "other_user",
+      name: "Chorister Member",
+      email: "chorister@example.com",
+      role: "chorister",
+    }),
+  );
+
+  const roster = await t.withIdentity(adminIdentity).query(api.members.list, {});
+
+  expect(roster).toHaveLength(2);
+  expect(roster).toContainEqual({ _id: adminId, name: "Admin Member", role: "admin" });
+  expect(roster.every((m) => !("email" in m) && !("clerkUserId" in m))).toBe(true);
+});
+
+test("list refuses a signed-out caller", async () => {
+  const t = convexTest(schema, modules);
+  await expect(t.query(api.members.list, {})).rejects.toThrow();
+});
+
+test("updateRole changes an existing Member's role", async () => {
+  const t = convexTest(schema, modules);
+  await t.run(async (ctx) =>
+    ctx.db.insert("members", {
+      clerkUserId: `${adminIdentity.issuer}|${adminIdentity.subject}`,
+      name: "Admin Member",
+      email: "admin@example.com",
+      role: "admin",
+    }),
+  );
+  const targetId = await t.run(async (ctx) =>
+    ctx.db.insert("members", {
+      clerkUserId: "other_user",
+      name: "Future Director",
+      email: "future-director@example.com",
+      role: "chorister",
+    }),
+  );
+
+  await t.withIdentity(adminIdentity).mutation(api.members.updateRole, { memberId: targetId, role: "director" });
+
+  const member = await t.run(async (ctx) => await ctx.db.get("members", targetId));
+  expect(member?.role).toBe("director");
+});
+
+test("updateRole refuses a non-admin caller", async () => {
+  const t = convexTest(schema, modules);
+  const targetId = await t.run(async (ctx) =>
+    ctx.db.insert("members", {
+      clerkUserId: `${choristerIdentity.issuer}|${choristerIdentity.subject}`,
+      name: "Chorister Member",
+      email: "chorister@example.com",
+      role: "chorister",
+    }),
+  );
+
+  await expect(
+    t.withIdentity(choristerIdentity).mutation(api.members.updateRole, { memberId: targetId, role: "admin" }),
+  ).rejects.toThrow(/Requires role/);
+});

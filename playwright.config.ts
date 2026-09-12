@@ -52,7 +52,7 @@ export default defineConfig({
     },
     {
       name: "chromium-admin",
-      testMatch: /settings-manage\.spec\.ts/,
+      testMatch: /(settings-manage|members-manage)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], storageState: ".auth/admin.json" },
       dependencies: ["setup-admin"],
     },
