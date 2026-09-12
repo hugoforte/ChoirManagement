@@ -1,19 +1,36 @@
 name: Playwright E2E
 
 on:
+  # Deliberately NOT push on "**": a push to a PR branch would fire this
+  # workflow twice for the same commit (once per event), and the two runs
+  # race for the same Vercel deployment — whichever loses sits in the
+  # resolve-deployment-url poll until it trips the 10-minute job timeout and
+  # is cancelled. A cancelled run of a *required* check blocks the merge even
+  # though its twin passed, which is exactly what happened on #15. PR
+  # branches are covered by pull_request; main is covered by push.
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+
+# One in-flight run per ref is enough; a newer commit supersedes an older one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 # PROTOTYPE — adapted from https://github.com/hugoforte/hugo-tessa-20-years's
 # preview-playwright.yml. Tests run against a REAL deployed Vercel URL, never
 # a dev server spun up in CI — same philosophy as that repo's config, where
 # PLAYWRIGHT_BASE_URL also drives local runs (defaults to localhost:5173).
 #
-# Split into two jobs because Clerk does not support ephemeral vercel.app
-# preview URLs (needs a custom domain) — see docs/architecture/ci-cd-and-testing.md:
-#   - e2e-guest: every push/PR, against that commit's PREVIEW deployment.
+# Split into two jobs for historical reasons: this repo believed Clerk could
+# not work on ephemeral vercel.app preview URLs. That turned out to be a
+# misdiagnosis (preview builds were simply broken and had no Clerk key at
+# all) — Clerk dev keys work on previews fine, verified. So e2e-authenticated
+# COULD now run against a PR's preview rather than only post-merge against
+# production; collapsing these into one run is a deliberate follow-up, not a
+# constraint. See docs/architecture/ci-cd-and-testing.md.
+#   - e2e-guest: every PR, against that commit's PREVIEW deployment.
 #     Only the unauthenticated "guest" Playwright project runs here (the
 #     public Events site, ticket #7) — no Clerk login involved.
 #   - e2e-authenticated: push to main only, against PRODUCTION. Runs the
@@ -115,8 +132,10 @@ jobs:
       # data and should NOT run this). Guarded by repository so a self-hoster's
       # fork skips it even with Vercel secrets configured.
       #
-      # Disabled for now (if: false): convex/seed.ts:demo doesn't exist yet.
-      # Re-enable once it's written — don't just flip this back on blind.
+      # Stays disabled (if: false) on purpose. convex/seed.ts:demo now
+      # exists, but it seeds the `staging` deployment behind preview builds —
+      # running it here would point it at PRODUCTION, which is the one place
+      # demo data must never appear. Staging is seeded once, out of band.
       - name: Reseed demo data
         if: false && steps.secrets.outputs.available == 'true' && github.repository == 'hugoforte/ChoirManagement'
         run: npx convex run seed:demo
