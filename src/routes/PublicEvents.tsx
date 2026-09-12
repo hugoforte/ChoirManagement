@@ -10,7 +10,7 @@ export default function PublicEvents() {
   return (
     <div className="min-h-screen bg-stone-50 font-serif text-stone-900 dark:bg-stone-950 dark:text-stone-100">
       <header className="border-b border-stone-200 dark:border-stone-800">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-6">
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4 sm:px-6 sm:py-6">
           <div>
             <p className="font-sans text-xs uppercase tracking-[0.2em] text-amber-700 dark:text-amber-500">
               Public programme
@@ -26,7 +26,7 @@ export default function PublicEvents() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-6 py-10">
+      <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10">
         {events === undefined ? (
           <p className="text-stone-500 dark:text-stone-400">Loading…</p>
         ) : events.length === 0 ? (

@@ -29,27 +29,26 @@ export function AppShell({
   return (
     <div className="min-h-screen bg-stone-50 font-serif text-stone-900 dark:bg-stone-950 dark:text-stone-100">
       <header className="border-b border-stone-200 dark:border-stone-800">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-6">
+        <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-0 sm:px-6 sm:py-6">
           <div>
             <p className="font-sans text-xs uppercase tracking-[0.2em] text-amber-700 dark:text-amber-500">
               Member area
             </p>
             <h1 className="text-2xl font-semibold tracking-tight">{choirName}</h1>
           </div>
-          <div className="text-right font-sans text-sm text-stone-500 dark:text-stone-400">
-            Welcome back,
-            <br />
-            <span className="text-stone-800 dark:text-stone-200">{viewerName}</span>
-            <div className="mt-1">
+          <div className="font-sans text-sm text-stone-500 dark:text-stone-400 sm:text-right">
+            Welcome back, <span className="text-stone-800 dark:text-stone-200">{viewerName}</span>
+            <span className="mx-2 text-stone-300 dark:text-stone-700 sm:hidden">·</span>
+            <span className="inline sm:block sm:mt-1">
               <SignOutButton>
                 <button className="underline decoration-stone-400 hover:text-stone-800 dark:hover:text-stone-200">
                   Sign out
                 </button>
               </SignOutButton>
-            </div>
+            </span>
           </div>
         </div>
-        <nav className="mx-auto flex max-w-3xl gap-6 px-6 pb-4 font-sans text-sm">
+        <nav className="mx-auto flex max-w-3xl flex-wrap gap-x-6 gap-y-2 px-4 pb-4 font-sans text-sm sm:px-6">
           {NAV_ITEMS.map((item) => {
             const isActive = item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to);
             return (
@@ -81,7 +80,7 @@ export function AppShell({
         </nav>
       </header>
 
-      <main className="mx-auto max-w-3xl px-6 py-10">{children}</main>
+      <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10">{children}</main>
     </div>
   );
 }

@@ -16,7 +16,7 @@ export default function PublicEventDetail() {
     return (
       <div className="min-h-screen bg-stone-50 font-serif text-stone-900 dark:bg-stone-950 dark:text-stone-100">
         <header className="border-b border-stone-200 dark:border-stone-800">
-          <div className="mx-auto max-w-3xl px-6 py-6">
+          <div className="mx-auto max-w-3xl px-4 py-4 sm:px-6 sm:py-6">
             <Link
               to="/public/events"
               className="font-sans text-sm text-amber-800 underline hover:text-amber-900 dark:text-amber-400"
@@ -25,7 +25,7 @@ export default function PublicEventDetail() {
             </Link>
           </div>
         </header>
-        <main className="mx-auto max-w-3xl px-6 py-10">
+        <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10">
           <p className="font-sans text-stone-600 dark:text-stone-400">This Event is private.</p>
           <Link
             to="/sign-in"
@@ -41,7 +41,7 @@ export default function PublicEventDetail() {
   return (
     <div className="min-h-screen bg-stone-50 font-serif text-stone-900 dark:bg-stone-950 dark:text-stone-100">
       <header className="border-b border-stone-200 dark:border-stone-800">
-        <div className="mx-auto max-w-3xl px-6 py-6">
+        <div className="mx-auto max-w-3xl px-4 py-4 sm:px-6 sm:py-6">
           <Link
             to="/public/events"
             className="font-sans text-sm text-amber-800 underline hover:text-amber-900 dark:text-amber-400"
@@ -50,7 +50,7 @@ export default function PublicEventDetail() {
           </Link>
         </div>
       </header>
-      <main className="mx-auto max-w-3xl px-6 py-10">
+      <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10">
         <h1 className="text-2xl font-semibold tracking-tight">{event.title}</h1>
         <p className="mt-1 font-sans text-sm text-stone-500 dark:text-stone-400">
           {new Date(event.startsAt).toLocaleString()}
