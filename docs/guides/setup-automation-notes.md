@@ -44,8 +44,9 @@ dies with `Invalid flags supplied to RegExp constructor 'v'`.
 **On preview URLs**: Clerk *development* keys (`pk_test_`/`sk_test_`) are built to work on arbitrary
 origins, ephemeral `*.vercel.app` included — dev instances carry session state in a `__clerk_db_jwt`
 querystring parameter instead of an origin-bound cookie. Clerk *production* keys will never work on
-`*.vercel.app`. The earlier "Clerk can't do preview URLs" conclusion in this repo predates that
-finding and is being re-verified — see [`../architecture/ci-cd-and-testing.md`](../architecture/ci-cd-and-testing.md).
+`*.vercel.app`. **Verified working** on a real branch preview on 2026-09-11 (Clerk initialised, and the signed-out
+redirect on `/` resolved rather than hanging). The earlier "Clerk can't do preview URLs" claim was a
+misdiagnosis of preview builds that were failing for unrelated reasons — see [`../architecture/ci-cd-and-testing.md`](../architecture/ci-cd-and-testing.md).
 
 ## Vercel
 
