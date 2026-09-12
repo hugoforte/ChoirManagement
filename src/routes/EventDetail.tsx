@@ -43,6 +43,7 @@ function EventDetailContent({ viewer }: { viewer: Doc<"members"> }) {
           <button
             key={status}
             onClick={() => rsvp({ eventId: event._id, status })}
+            aria-pressed={event.myRsvp === status}
             className={`rounded px-3 py-1 text-sm capitalize ${
               event.myRsvp === status
                 ? "bg-brand-600 text-white"

@@ -25,7 +25,11 @@ test("director can create an Event, RSVP to it, and see the RSVP reflected on th
   await page.goto("/events");
   await page.getByRole("link", { name: title }).click();
   await page.waitForURL(/\/events\/[^/]+$/);
-  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  const yesButton = page.getByRole("button", { name: "yes", exact: true });
+  await yesButton.click();
+  // Wait for the RSVP mutation to actually land before navigating away —
+  // otherwise the next page's data can be read before it's written.
+  await expect(yesButton).toHaveAttribute("aria-pressed", "true");
 
   await page.goto("/events");
   const row = page.getByRole("listitem").filter({ hasText: title });
