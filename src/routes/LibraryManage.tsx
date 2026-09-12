@@ -4,7 +4,9 @@ import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
-import { MemberGate, canManage } from "../lib/memberGate";
+import { MemberGate, canManage, isAdmin } from "../lib/memberGate";
+import { AppShell } from "../design/AppShell";
+import { inputClass, primaryButtonClass, mutedLinkClass, dangerLinkClass, cardClass } from "../design/forms";
 
 type FileKind = "pdf" | "musescore" | "midi" | "audio" | "other";
 
@@ -20,23 +22,30 @@ function inferKind(filename: string): FileKind {
 export default function LibraryManage() {
   return (
     <MemberGate>
-      {(viewer) =>
-        canManage(viewer) ? (
-          <LibraryManageContent />
-        ) : (
-          <div className="mx-auto max-w-2xl p-8">
-            <p>You don't have access to this page.</p>
-            <Link to="/library" className="text-brand-600 underline hover:text-brand-700">
-              Back to Music Library
-            </Link>
-          </div>
-        )
-      }
+      {(viewer) => (canManage(viewer) ? <LibraryManageContent viewer={viewer} /> : <NoAccess viewer={viewer} />)}
     </MemberGate>
   );
 }
 
-function LibraryManageContent() {
+function NoAccess({ viewer }: { viewer: Doc<"members"> }) {
+  const choirSettings = useQuery(api.choirSettings.get);
+  return (
+    <AppShell
+      choirName={choirSettings?.name ?? "ChoirManagement"}
+      viewerName={viewer.name}
+      showSettings={isAdmin(viewer)}
+      pageTitle="Music Library"
+    >
+      <p className="text-sm text-stone-600 dark:text-stone-400">You don't have access to this page.</p>
+      <Link to="/library" className={mutedLinkClass}>
+        Back to Music Library
+      </Link>
+    </AppShell>
+  );
+}
+
+function LibraryManageContent({ viewer }: { viewer: Doc<"members"> }) {
+  const choirSettings = useQuery(api.choirSettings.get);
   const pieces = useQuery(api.pieces.list);
   const createPiece = useMutation(api.pieces.create);
   const [newTitle, setNewTitle] = useState("");
@@ -55,42 +64,35 @@ function LibraryManageContent() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl p-8">
-      <h1 className="text-2xl font-bold">Manage Music Library</h1>
-
-      <form onSubmit={handleCreate} className="mt-4 flex gap-2">
+    <AppShell
+      choirName={choirSettings?.name ?? "ChoirManagement"}
+      viewerName={viewer.name}
+      showSettings={isAdmin(viewer)}
+      pageTitle="Manage Music Library"
+    >
+      <form onSubmit={handleCreate} className="flex gap-2">
         <input
           type="text"
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
           placeholder="New Piece title"
-          className="flex-1 rounded border border-gray-300 px-3 py-1.5 text-sm"
+          className={`${inputClass} flex-1`}
         />
-        <button
-          type="submit"
-          disabled={creating || !newTitle.trim()}
-          className="rounded bg-brand-600 px-3 py-1.5 text-sm text-white hover:bg-brand-700 disabled:opacity-50"
-        >
+        <button type="submit" disabled={creating || !newTitle.trim()} className={primaryButtonClass}>
           Add
         </button>
       </form>
 
       {pieces === undefined ? (
-        <p className="mt-4 text-gray-500">Loading…</p>
+        <p className="mt-4 text-sm text-stone-500 dark:text-stone-400">Loading…</p>
       ) : (
-        <ul className="mt-6 space-y-4">
+        <ul className="mt-6 space-y-3">
           {pieces.map((piece) => (
             <PieceManageRow key={piece._id} piece={piece} />
           ))}
         </ul>
       )}
-
-      <nav className="mt-8">
-        <Link to="/library" className="text-sm text-gray-600 underline">
-          Back to Music Library
-        </Link>
-      </nav>
-    </div>
+    </AppShell>
   );
 }
 
@@ -148,12 +150,12 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
   }
 
   return (
-    <li className="rounded border border-gray-200 p-3">
+    <li className={`${cardClass} p-3`}>
       <div className="flex items-center justify-between">
         <button onClick={() => setExpanded((v) => !v)} className="font-medium hover:underline">
           {piece.title}
         </button>
-        <button onClick={handleDelete} className="text-sm text-danger hover:underline">
+        <button onClick={handleDelete} className={dangerLinkClass}>
           Delete
         </button>
       </div>
@@ -165,56 +167,54 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
             value={fields.title}
             onChange={(e) => setFields((f) => ({ ...f, title: e.target.value }))}
             placeholder="Title"
-            className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+            className={inputClass}
           />
           <input
             type="text"
             value={fields.composer}
             onChange={(e) => setFields((f) => ({ ...f, composer: e.target.value }))}
             placeholder="Composer"
-            className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+            className={inputClass}
           />
           <input
             type="text"
             value={fields.arranger}
             onChange={(e) => setFields((f) => ({ ...f, arranger: e.target.value }))}
             placeholder="Arranger"
-            className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+            className={inputClass}
           />
           <textarea
             value={fields.notes}
             onChange={(e) => setFields((f) => ({ ...f, notes: e.target.value }))}
             placeholder="Notes"
-            className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+            className={inputClass}
           />
           <input
             type="text"
             value={fields.youtubeUrl}
             onChange={(e) => setFields((f) => ({ ...f, youtubeUrl: e.target.value }))}
             placeholder="YouTube reference link"
-            className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+            className={inputClass}
           />
-          <button
-            onClick={handleSave}
-            className="rounded bg-brand-600 px-3 py-1 text-sm text-white hover:bg-brand-700"
-          >
+          <button onClick={handleSave} className={primaryButtonClass}>
             Save
           </button>
 
-          <div className="mt-3 border-t border-gray-100 pt-3">
+          <div className="mt-3 border-t border-stone-100 pt-3 dark:border-stone-800">
             <p className="text-sm font-medium">Files</p>
             {detail === undefined ? (
-              <p className="text-sm text-gray-500">Loading…</p>
+              <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>
             ) : (
               <ul className="mt-1 space-y-1">
                 {detail?.files.map((file) => (
                   <li key={file.storageId} className="flex items-center justify-between text-sm">
                     <span>
-                      {file.filename} <span className="text-gray-500">({file.kind})</span>
+                      {file.filename}{" "}
+                      <span className="text-stone-500 dark:text-stone-400">({file.kind})</span>
                     </span>
                     <button
                       onClick={() => detachFile({ pieceId: piece._id, storageId: file.storageId })}
-                      className="text-danger hover:underline"
+                      className={dangerLinkClass}
                     >
                       Remove
                     </button>

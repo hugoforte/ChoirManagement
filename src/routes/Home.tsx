@@ -1,11 +1,11 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { SignOutButton } from "@clerk/clerk-react";
 import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
 import { MemberGate, isAdmin } from "../lib/memberGate";
+import { AppShell, RSVP_BADGE, RSVP_LABEL } from "../design/AppShell";
 
 export default function Home() {
   return <MemberGate>{(viewer) => <HomeContentForMember viewer={viewer} />}</MemberGate>;
@@ -17,53 +17,80 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
   // render would resubscribe the query each time instead of once.
   const now = useMemo(() => Date.now(), []);
   const upcoming = useQuery(api.events.listUpcoming, { now });
+  const myRsvps = useQuery(api.events.myRsvps);
+  const members = useQuery(api.members.list);
+  const statusByEvent = new Map(myRsvps?.map((r) => [r.eventId, r.status]));
+  const unfilled = upcoming?.filter((e) => !statusByEvent.has(e._id)).length ?? 0;
 
   return (
-    <div className="mx-auto max-w-2xl p-8">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold">{choirSettings?.name ?? "ChoirManagement"}</h1>
-        <SignOutButton>
-          <button className="text-sm underline">Sign out</button>
-        </SignOutButton>
+    <AppShell
+      choirName={choirSettings?.name ?? "ChoirManagement"}
+      viewerName={viewer.name}
+      showSettings={isAdmin(viewer)}
+      pageTitle="Dashboard"
+    >
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatTile
+          label="Upcoming events"
+          value={upcoming === undefined ? "…" : String(upcoming.length)}
+          accent="text-stone-900 dark:text-stone-100"
+        />
+        <StatTile
+          label="Needs your RSVP"
+          value={upcoming === undefined ? "…" : String(unfilled)}
+          accent="text-amber-600 dark:text-amber-400"
+        />
+        <StatTile
+          label="Active members"
+          value={members === undefined ? "…" : String(members.length)}
+          accent="text-brand-600 dark:text-brand-400"
+        />
       </div>
-      <p className="mt-1 text-gray-600">Welcome, {viewer.name}.</p>
 
-      <h2 className="mt-8 font-semibold">Upcoming Events</h2>
-      {upcoming === undefined ? (
-        <p className="text-gray-500">Loading…</p>
-      ) : upcoming.length === 0 ? (
-        <p className="text-gray-500">Nothing scheduled yet.</p>
-      ) : (
-        <ul className="mt-2 space-y-1">
-          {upcoming.map((event) => (
-            <li key={event._id}>
-              <Link to={`/events/${event._id}`} className="text-brand-600 underline hover:text-brand-700">
-                {event.title}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <nav className="mt-8 flex gap-4 text-sm">
-        <Link to="/library" className="text-brand-600 underline hover:text-brand-700">
-          Music Library
-        </Link>
-        <Link to="/events" className="text-brand-600 underline hover:text-brand-700">
-          Events
-        </Link>
-        <Link to="/public/events" className="text-brand-600 underline hover:text-brand-700">
-          Public Events page
-        </Link>
-        <Link to="/members" className="text-brand-600 underline hover:text-brand-700">
-          Member Roster
-        </Link>
-        {isAdmin(viewer) && (
-          <Link to="/settings" className="text-brand-600 underline hover:text-brand-700">
-            Settings
+      <div className="mt-6 rounded-xl border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900">
+        <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3 dark:border-stone-800">
+          <h2 className="text-sm font-semibold">Upcoming</h2>
+          <Link to="/events" className="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">
+            View all
           </Link>
+        </div>
+        {upcoming === undefined ? (
+          <p className="p-4 text-sm text-stone-500 dark:text-stone-400">Loading…</p>
+        ) : upcoming.length === 0 ? (
+          <p className="p-4 text-sm text-stone-500 dark:text-stone-400">Nothing scheduled yet.</p>
+        ) : (
+          <ul className="divide-y divide-stone-100 dark:divide-stone-800">
+            {upcoming.map((event) => {
+              const status = statusByEvent.get(event._id) ?? "no RSVP";
+              return (
+                <li key={event._id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                  <div className="min-w-0">
+                    <Link to={`/events/${event._id}`} className="truncate font-medium hover:underline">
+                      {event.title}
+                    </Link>
+                    <p className="text-xs text-stone-500 dark:text-stone-400">
+                      {new Date(event.startsAt).toLocaleString()}
+                      {event.location ? ` · ${event.location}` : ""}
+                    </p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${RSVP_BADGE[status]}`}>
+                    {RSVP_LABEL[status]}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         )}
-      </nav>
+      </div>
+    </AppShell>
+  );
+}
+
+function StatTile({ label, value, accent }: { label: string; value: string; accent: string }) {
+  return (
+    <div className="rounded-xl border border-stone-200 bg-white p-4 dark:border-stone-800 dark:bg-stone-900">
+      <p className="text-xs font-medium tracking-wide text-stone-500 dark:text-stone-400">{label}</p>
+      <p className={`mt-1 text-2xl font-semibold ${accent}`}>{value}</p>
     </div>
   );
 }

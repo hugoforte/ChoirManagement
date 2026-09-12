@@ -6,6 +6,7 @@ import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 
 import App from "./App";
+import { ThemeProvider } from "./design/ThemeProvider";
 import "./index.css";
 
 const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
@@ -18,12 +19,14 @@ const convex = new ConvexReactClient(convexUrl);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ClerkProvider publishableKey={clerkPublishableKey}>
-      <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </ConvexProviderWithClerk>
-    </ClerkProvider>
+    <ThemeProvider>
+      <ClerkProvider publishableKey={clerkPublishableKey}>
+        <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </ConvexProviderWithClerk>
+      </ClerkProvider>
+    </ThemeProvider>
   </StrictMode>,
 );

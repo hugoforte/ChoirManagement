@@ -26,9 +26,10 @@ setup("authenticate as director", async ({ page }) => {
 
   // Land on a Member-gated route so MemberGate's ensureCurrentMember
   // mutation fires and creates/syncs the Convex members row for this
-  // Clerk user before the storage state is captured.
+  // Clerk user before the storage state is captured. The Dashboard heading
+  // only renders once MemberGate has resolved a real Member doc.
   await page.goto("/");
-  await page.getByText("Welcome,").waitFor();
+  await page.getByRole("heading", { name: "Dashboard" }).waitFor();
 
   await page.context().storageState({ path: directorAuthFile });
 });
