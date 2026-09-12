@@ -22,34 +22,34 @@ function MembersContent({ viewer }: { viewer: Doc<"members"> }) {
       pageTitle="Roster"
     >
       {isAdmin(viewer) && (
-        <Link to="/members/manage" className="mb-4 inline-block text-sm text-teal-600 hover:underline dark:text-teal-400">
+        <Link to="/members/manage" className="mb-4 inline-block text-sm text-brand-600 hover:underline dark:text-brand-400">
           Manage
         </Link>
       )}
 
       {members === undefined ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
+        <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <div className="overflow-hidden rounded-xl border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              <tr className="border-b border-stone-200 text-left text-xs tracking-wide text-stone-500 dark:border-stone-800 dark:text-stone-400">
                 <th className="px-4 py-2 font-medium">Member</th>
                 <th className="px-4 py-2 font-medium">Role</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
               {members.map((member) => (
-                <tr key={member._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <tr key={member._id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50">
                   <td className="flex items-center gap-2.5 px-4 py-2.5">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-teal-100 text-[10px] font-semibold text-teal-700 dark:bg-teal-500/15 dark:text-teal-400">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-100 text-[10px] font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-400">
                       {initials(member.name)}
                     </div>
                     {member.name}
                   </td>
-                  <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">
+                  <td className="px-4 py-2.5 text-stone-600 dark:text-stone-400">
                     {member.role !== "chorister" && (
-                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs capitalize dark:bg-slate-800">
+                      <span className="rounded bg-stone-100 px-1.5 py-0.5 text-xs capitalize dark:bg-stone-800">
                         {member.role}
                       </span>
                     )}

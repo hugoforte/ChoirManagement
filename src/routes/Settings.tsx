@@ -3,29 +3,37 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
-import { Id } from "../../convex/_generated/dataModel";
+import { Doc, Id } from "../../convex/_generated/dataModel";
 import { MemberGate, isAdmin } from "../lib/memberGate";
+import { AppShell } from "../design/AppShell";
+import { inputClass, labelClass, primaryButtonClass, mutedLinkClass } from "../design/forms";
 
 export default function Settings() {
   return (
     <MemberGate>
-      {(viewer) =>
-        isAdmin(viewer) ? (
-          <SettingsContent />
-        ) : (
-          <div className="mx-auto max-w-2xl p-8">
-            <p>You don't have access to this page.</p>
-            <Link to="/" className="text-brand-600 underline hover:text-brand-700">
-              Back home
-            </Link>
-          </div>
-        )
-      }
+      {(viewer) => (isAdmin(viewer) ? <SettingsContent viewer={viewer} /> : <NoAccess viewer={viewer} />)}
     </MemberGate>
   );
 }
 
-function SettingsContent() {
+function NoAccess({ viewer }: { viewer: Doc<"members"> }) {
+  const choirSettings = useQuery(api.choirSettings.get);
+  return (
+    <AppShell
+      choirName={choirSettings?.name ?? "ChoirManagement"}
+      viewerName={viewer.name}
+      showSettings={isAdmin(viewer)}
+      pageTitle="Settings"
+    >
+      <p className="text-sm text-stone-600 dark:text-stone-400">You don't have access to this page.</p>
+      <Link to="/" className={mutedLinkClass}>
+        Back home
+      </Link>
+    </AppShell>
+  );
+}
+
+function SettingsContent({ viewer }: { viewer: Doc<"members"> }) {
   const settings = useQuery(api.choirSettings.get);
   const update = useMutation(api.choirSettings.update);
   const generateLogoUploadUrl = useMutation(api.choirSettings.generateLogoUploadUrl);
@@ -85,75 +93,80 @@ function SettingsContent() {
     }
   }
 
-  if (settings === undefined) {
-    return <p className="p-8 text-gray-500">Loading…</p>;
-  }
-
   return (
-    <div className="mx-auto max-w-2xl p-8">
-      <h1 className="text-2xl font-bold">Choir Settings</h1>
+    <AppShell
+      choirName={settings?.name ?? "ChoirManagement"}
+      viewerName={viewer.name}
+      showSettings={isAdmin(viewer)}
+      pageTitle="Settings"
+    >
+      {settings === undefined ? (
+        <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>
+      ) : (
+        <div className="max-w-xl space-y-6">
+          <div>
+            <p className={labelClass}>Logo</p>
+            {settings?.logoUrl ? (
+              <img
+                src={settings.logoUrl}
+                alt="Choir logo"
+                className="mt-2 h-24 w-24 rounded-xl object-cover"
+              />
+            ) : (
+              <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">No logo uploaded yet.</p>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleLogoUpload}
+              disabled={uploading}
+              className="mt-2 text-sm"
+            />
+          </div>
 
-      <div className="mt-6">
-        <p className="text-sm font-medium">Logo</p>
-        {settings?.logoUrl ? (
-          <img src={settings.logoUrl} alt="Choir logo" className="mt-2 h-24 w-24 rounded object-cover" />
-        ) : (
-          <p className="mt-2 text-sm text-gray-500">No logo uploaded yet.</p>
-        )}
-        <input type="file" accept="image/*" onChange={handleLogoUpload} disabled={uploading} className="mt-2 text-sm" />
-      </div>
-
-      <form onSubmit={handleSave} className="mt-6 space-y-3">
-        <div>
-          <label htmlFor="settings-name" className="text-sm font-medium">
-            Choir name
-          </label>
-          <input
-            id="settings-name"
-            type="text"
-            value={fields.name}
-            onChange={(e) => setFields((f) => ({ ...f, name: e.target.value }))}
-            required
-            className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
-          />
+          <form onSubmit={handleSave} className="space-y-3">
+            <div>
+              <label htmlFor="settings-name" className={labelClass}>
+                Choir name
+              </label>
+              <input
+                id="settings-name"
+                type="text"
+                value={fields.name}
+                onChange={(e) => setFields((f) => ({ ...f, name: e.target.value }))}
+                required
+                className={`mt-1 ${inputClass}`}
+              />
+            </div>
+            <div>
+              <label htmlFor="settings-description" className={labelClass}>
+                Description
+              </label>
+              <textarea
+                id="settings-description"
+                value={fields.description}
+                onChange={(e) => setFields((f) => ({ ...f, description: e.target.value }))}
+                className={`mt-1 ${inputClass}`}
+              />
+            </div>
+            <div>
+              <label htmlFor="settings-contact-email" className={labelClass}>
+                Contact email
+              </label>
+              <input
+                id="settings-contact-email"
+                type="email"
+                value={fields.contactEmail}
+                onChange={(e) => setFields((f) => ({ ...f, contactEmail: e.target.value }))}
+                className={`mt-1 ${inputClass}`}
+              />
+            </div>
+            <button type="submit" disabled={saving || !fields.name.trim()} className={primaryButtonClass}>
+              Save
+            </button>
+          </form>
         </div>
-        <div>
-          <label htmlFor="settings-description" className="text-sm font-medium">
-            Description
-          </label>
-          <textarea
-            id="settings-description"
-            value={fields.description}
-            onChange={(e) => setFields((f) => ({ ...f, description: e.target.value }))}
-            className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
-          />
-        </div>
-        <div>
-          <label htmlFor="settings-contact-email" className="text-sm font-medium">
-            Contact email
-          </label>
-          <input
-            id="settings-contact-email"
-            type="email"
-            value={fields.contactEmail}
-            onChange={(e) => setFields((f) => ({ ...f, contactEmail: e.target.value }))}
-            className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={saving || !fields.name.trim()}
-          className="rounded bg-brand-600 px-3 py-1.5 text-sm text-white hover:bg-brand-700 disabled:opacity-50"
-        >
-          Save
-        </button>
-      </form>
-
-      <nav className="mt-8">
-        <Link to="/" className="text-sm text-gray-600 underline">
-          Back home
-        </Link>
-      </nav>
-    </div>
+      )}
+    </AppShell>
   );
 }

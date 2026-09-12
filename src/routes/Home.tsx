@@ -33,7 +33,7 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
         <StatTile
           label="Upcoming events"
           value={upcoming === undefined ? "…" : String(upcoming.length)}
-          accent="text-slate-900 dark:text-slate-100"
+          accent="text-stone-900 dark:text-stone-100"
         />
         <StatTile
           label="Needs your RSVP"
@@ -43,23 +43,23 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
         <StatTile
           label="Active members"
           value={members === undefined ? "…" : String(members.length)}
-          accent="text-teal-600 dark:text-teal-400"
+          accent="text-brand-600 dark:text-brand-400"
         />
       </div>
 
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+      <div className="mt-6 rounded-xl border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900">
+        <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3 dark:border-stone-800">
           <h2 className="text-sm font-semibold">Upcoming</h2>
-          <Link to="/events" className="text-xs font-medium text-teal-600 hover:underline dark:text-teal-400">
+          <Link to="/events" className="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">
             View all
           </Link>
         </div>
         {upcoming === undefined ? (
-          <p className="p-4 text-sm text-slate-500 dark:text-slate-400">Loading…</p>
+          <p className="p-4 text-sm text-stone-500 dark:text-stone-400">Loading…</p>
         ) : upcoming.length === 0 ? (
-          <p className="p-4 text-sm text-slate-500 dark:text-slate-400">Nothing scheduled yet.</p>
+          <p className="p-4 text-sm text-stone-500 dark:text-stone-400">Nothing scheduled yet.</p>
         ) : (
-          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+          <ul className="divide-y divide-stone-100 dark:divide-stone-800">
             {upcoming.map((event) => {
               const status = statusByEvent.get(event._id) ?? "no RSVP";
               return (
@@ -68,7 +68,7 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
                     <Link to={`/events/${event._id}`} className="truncate font-medium hover:underline">
                       {event.title}
                     </Link>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                    <p className="text-xs text-stone-500 dark:text-stone-400">
                       {new Date(event.startsAt).toLocaleString()}
                       {event.location ? ` · ${event.location}` : ""}
                     </p>
@@ -88,8 +88,8 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
 
 function StatTile({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
+    <div className="rounded-xl border border-stone-200 bg-white p-4 dark:border-stone-800 dark:bg-stone-900">
+      <p className="text-xs font-medium tracking-wide text-stone-500 dark:text-stone-400">{label}</p>
       <p className={`mt-1 text-2xl font-semibold ${accent}`}>{value}</p>
     </div>
   );

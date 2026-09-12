@@ -1,6 +1,10 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  // Class-based (not the default 'media'): lets ThemeProvider override the OS
+  // preference with an explicit user choice, while still defaulting to
+  // 'system' — see src/design/ThemeProvider.tsx.
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
