@@ -5,7 +5,7 @@ import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
-import { MemberGate } from "../lib/memberGate";
+import { MemberGate, isAdmin } from "../lib/memberGate";
 
 export default function Home() {
   return <MemberGate>{(viewer) => <HomeContentForMember viewer={viewer} />}</MemberGate>;
@@ -48,6 +48,11 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
         <Link to="/public/events" className="text-brand-600 underline hover:text-brand-700">
           Public Events page
         </Link>
+        {isAdmin(viewer) && (
+          <Link to="/settings" className="text-brand-600 underline hover:text-brand-700">
+            Settings
+          </Link>
+        )}
       </nav>
     </div>
   );
