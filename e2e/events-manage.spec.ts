@@ -32,6 +32,9 @@ test("director can create an Event, RSVP to it, and see the RSVP reflected on th
   await expect(yesButton).toHaveAttribute("aria-pressed", "true");
 
   await page.goto("/events");
-  const row = page.getByRole("listitem").filter({ hasText: title });
-  await expect(row).toContainText("yes");
+  // Events.tsx renders this as a <table> row (role="row"), not a <li>, and
+  // shows a friendlier RSVP_LABEL ("Going") rather than the raw "yes"
+  // status value.
+  const row = page.getByRole("row").filter({ hasText: title });
+  await expect(row).toContainText("Going");
 });

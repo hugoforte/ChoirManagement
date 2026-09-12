@@ -21,8 +21,10 @@ test("admin can change a Member's Role and see it reflected on the roster", asyn
   await select.selectOption("director");
   await expect(select).toHaveValue("director");
 
+  // Members.tsx (the roster view, unlike the manage screen) renders this
+  // as a <table> row (role="row"), not a <li>.
   await page.goto("/members");
-  await expect(page.getByRole("listitem").filter({ hasText: "Test Chorister" })).toContainText("director");
+  await expect(page.getByRole("row").filter({ hasText: "Test Chorister" })).toContainText("director");
 
   await page.goto("/members/manage");
   await page.getByRole("listitem").filter({ hasText: "Test Chorister" }).getByRole("combobox").selectOption(originalRole);
