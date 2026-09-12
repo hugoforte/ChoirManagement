@@ -81,6 +81,9 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          # On pull_request, github.sha is a synthetic merge commit Vercel
+          # never builds — use the PR head SHA so the poll can actually match.
+          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Install Playwright browser
         if: steps.secrets.outputs.available == 'true'
@@ -123,6 +126,9 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          # On pull_request, github.sha is a synthetic merge commit Vercel
+          # never builds — use the PR head SHA so the poll can actually match.
+          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Install Playwright browser
         if: steps.secrets.outputs.available == 'true'
