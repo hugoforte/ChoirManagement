@@ -13,6 +13,12 @@ const NAV_ITEMS = [
   { to: "/members", label: "Roster", icon: "M12 12a4 4 0 100-8 4 4 0 000 8zM4 20c0-4 4-6 8-6s8 2 8 6" },
 ];
 
+const SETTINGS_ITEM = {
+  to: "/settings",
+  label: "Settings",
+  icon: "M10.325 4.317a1 1 0 011.35 0l.494.44a1 1 0 00.94.23l.63-.17a1 1 0 011.19.55l.3.6a1 1 0 00.74.54l.65.11a1 1 0 01.79 1.15l-.11.65a1 1 0 00.3.86l.47.46a1 1 0 010 1.42l-.47.46a1 1 0 00-.3.86l.11.65a1 1 0 01-.79 1.15l-.65.11a1 1 0 00-.74.54l-.3.6a1 1 0 01-1.19.55l-.63-.17a1 1 0 00-.94.23l-.49.44a1 1 0 01-1.35 0l-.49-.44a1 1 0 00-.94-.23l-.63.17a1 1 0 01-1.19-.55l-.3-.6a1 1 0 00-.74-.54l-.65-.11a1 1 0 01-.79-1.15l.11-.65a1 1 0 00-.3-.86l-.47-.46a1 1 0 010-1.42l.47-.46a1 1 0 00.3-.86l-.11-.65a1 1 0 01.79-1.15l.65-.11a1 1 0 00.74-.54l.3-.6a1 1 0 011.19-.55l.63.17a1 1 0 00.94-.23l.49-.44z",
+};
+
 function initials(name: string) {
   return name
     .split(" ")
@@ -36,10 +42,13 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const location = useLocation();
+  const allNavItems = showSettings ? [...NAV_ITEMS, SETTINGS_ITEM] : NAV_ITEMS;
 
   return (
     <div className="flex min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+      {/* Desktop sidebar — becomes a bottom tab bar below md, since a fixed
+          w-56 rail has no room on a phone-width viewport. */}
+      <aside className="hidden w-56 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 md:flex">
         <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-4 dark:border-slate-800">
           <div className="flex h-7 w-7 items-center justify-center rounded bg-teal-600 text-xs font-bold text-white">
             {initials(choirName)}
@@ -47,7 +56,7 @@ export function AppShell({
           <span className="truncate text-sm font-semibold">{choirName}</span>
         </div>
         <nav className="flex-1 space-y-0.5 p-2">
-          {NAV_ITEMS.map((item) => {
+          {allNavItems.map((item) => {
             const isActive = item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to);
             return (
               <Link
@@ -66,26 +75,6 @@ export function AppShell({
               </Link>
             );
           })}
-          {showSettings && (
-            <Link
-              to="/settings"
-              className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm ${
-                location.pathname.startsWith("/settings")
-                  ? "bg-teal-50 font-medium text-teal-700 dark:bg-teal-500/10 dark:text-teal-400"
-                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-              }`}
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path
-                  d="M10.325 4.317a1 1 0 011.35 0l.494.44a1 1 0 00.94.23l.63-.17a1 1 0 011.19.55l.3.6a1 1 0 00.74.54l.65.11a1 1 0 01.79 1.15l-.11.65a1 1 0 00.3.86l.47.46a1 1 0 010 1.42l-.47.46a1 1 0 00-.3.86l.11.65a1 1 0 01-.79 1.15l-.65.11a1 1 0 00-.74.54l-.3.6a1 1 0 01-1.19.55l-.63-.17a1 1 0 00-.94.23l-.49.44a1 1 0 01-1.35 0l-.49-.44a1 1 0 00-.94-.23l-.63.17a1 1 0 01-1.19-.55l-.3-.6a1 1 0 00-.74-.54l-.65-.11a1 1 0 01-.79-1.15l.11-.65a1 1 0 00-.3-.86l-.47-.46a1 1 0 010-1.42l.47-.46a1 1 0 00.3-.86l-.11-.65a1 1 0 01.79-1.15l.65-.11a1 1 0 00.74-.54l.3-.6a1 1 0 011.19-.55l.63.17a1 1 0 00.94-.23l.49-.44z"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <circle cx="12" cy="12" r="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              Settings
-            </Link>
-          )}
         </nav>
         <div className="flex items-center gap-2 border-t border-slate-200 p-3 dark:border-slate-800">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
@@ -101,11 +90,49 @@ export function AppShell({
       </aside>
 
       <div className="flex-1">
-        <header className="flex items-center border-b border-slate-200 bg-white px-6 py-3 dark:border-slate-800 dark:bg-slate-900">
+        <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900 md:px-6">
           <h1 className="text-base font-semibold">{pageTitle}</h1>
+          <SignOutButton>
+            <button
+              aria-label="Sign out"
+              className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200 md:hidden"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path
+                  d="M15 17l5-5-5-5M20 12H9M12 19H6a2 2 0 01-2-2V7a2 2 0 012-2h6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </SignOutButton>
         </header>
-        <main className="p-6">{children}</main>
+        <main className="p-4 pb-24 md:p-6 md:pb-6">{children}</main>
       </div>
+
+      {/* Mobile bottom tab bar — hidden from md up, where the sidebar takes over. */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 flex border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] dark:border-slate-800 dark:bg-slate-900 md:hidden"
+        aria-label="Primary"
+      >
+        {allNavItems.map((item) => {
+          const isActive = item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to);
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${
+                isActive ? "text-teal-700 dark:text-teal-400" : "text-slate-500 dark:text-slate-400"
+              }`}
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d={item.icon} strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }

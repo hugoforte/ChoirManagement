@@ -29,7 +29,7 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
       showSettings={isAdmin(viewer)}
       pageTitle="Dashboard"
     >
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatTile
           label="Upcoming events"
           value={upcoming === undefined ? "…" : String(upcoming.length)}
