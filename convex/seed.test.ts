@@ -3,9 +3,13 @@ import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 
 import schema from "./schema";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 const modules = import.meta.glob("./**/*.ts");
+
+// seed.ts refuses to run unless the deployment is explicitly marked as
+// holding throwaway data; convex-test reads the same process.env.
+process.env.ALLOW_DEMO_SEED = "true";
 
 test("demo seeds Pieces, Events, and Choir settings", async () => {
   const t = convexTest(schema, modules);
@@ -35,26 +39,72 @@ test("demo is idempotent", async () => {
   expect(pieces).toHaveLength(3);
 });
 
-test("promoteReviewer makes an existing Member an admin", async () => {
+test("upsertRoleMember creates a Member at the requested Role", async () => {
   const t = convexTest(schema, modules);
-  await t.run(async (ctx) => {
-    await ctx.db.insert("members", {
-      clerkUserId: "user_reviewer",
-      name: "Reviewer",
-      email: "reviewer@example.com",
-      role: "chorister",
-    });
+  const clerkUserId = "https://example.clerk.accounts.dev|user_director";
+
+  await t.mutation(internal.seed.upsertRoleMember, {
+    clerkUserId,
+    name: "E2E Director",
+    email: "e2e-director+clerk_test@example.com",
+    role: "director",
   });
 
-  await t.mutation(internal.seed.promoteReviewer, { email: "reviewer@example.com" });
-
-  const member = await t.run(async (ctx) => await ctx.db.query("members").first());
-  expect(member?.role).toBe("admin");
+  const member = await t.run(async (ctx) => await ctx.db.query("members").unique());
+  expect(member).toMatchObject({ clerkUserId, role: "director" });
 });
 
-test("promoteReviewer refuses an unknown email", async () => {
+test("upsertRoleMember is idempotent and corrects the Role in place", async () => {
   const t = convexTest(schema, modules);
-  await expect(
-    t.mutation(internal.seed.promoteReviewer, { email: "nobody@example.com" }),
-  ).rejects.toThrow(/No Member found/);
+  const clerkUserId = "https://example.clerk.accounts.dev|user_director";
+  const base = { clerkUserId, name: "E2E Director", email: "d@example.com" } as const;
+
+  const first = await t.mutation(internal.seed.upsertRoleMember, { ...base, role: "chorister" });
+  const second = await t.mutation(internal.seed.upsertRoleMember, { ...base, role: "director" });
+
+  expect(second).toBe(first);
+  const members = await t.run(async (ctx) => await ctx.db.query("members").collect());
+  expect(members).toHaveLength(1);
+  expect(members[0].role).toBe("director");
+});
+
+// The whole point of seeding a Member rather than promoting one: signing in
+// afterwards must not reset the seeded Role back to "chorister".
+test("a seeded Role survives that user's first sign-in", async () => {
+  const t = convexTest(schema, modules);
+  const identity = {
+    subject: "user_director",
+    issuer: "https://example.clerk.accounts.dev",
+    tokenIdentifier: "https://example.clerk.accounts.dev|user_director",
+  };
+
+  await t.mutation(internal.seed.upsertRoleMember, {
+    clerkUserId: identity.tokenIdentifier,
+    name: "Seeded Name",
+    email: "seeded@example.com",
+    role: "director",
+  });
+
+  await t
+    .withIdentity({ ...identity, name: "Clerk Name", email: "clerk@example.com" })
+    .mutation(api.members.ensureCurrentMember, {});
+
+  const members = await t.run(async (ctx) => await ctx.db.query("members").collect());
+  expect(members).toHaveLength(1);
+  expect(members[0]).toMatchObject({
+    role: "director",
+    name: "Clerk Name",
+    email: "clerk@example.com",
+  });
+});
+
+test("seeding refuses to run when ALLOW_DEMO_SEED is not set", async () => {
+  const t = convexTest(schema, modules);
+  const previous = process.env.ALLOW_DEMO_SEED;
+  process.env.ALLOW_DEMO_SEED = "false";
+  try {
+    await expect(t.mutation(internal.seed.demo, {})).rejects.toThrow(/ALLOW_DEMO_SEED/);
+  } finally {
+    process.env.ALLOW_DEMO_SEED = previous;
+  }
 });

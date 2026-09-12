@@ -3,14 +3,21 @@ import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
-// Seeds a non-production deployment (the shared `staging` deployment behind
-// Vercel Preview builds) with enough content that a reviewer opening a
-// preview URL sees a populated app instead of empty lists.
+// Seeding for non-production deployments (the `staging` deployment behind
+// Vercel Preview builds today; a per-branch preview deployment later). Two
+// separate concerns:
 //
-// Idempotent: re-running adds nothing if the demo Pieces are already there,
-// so it's safe to call repeatedly. Refuses to touch a deployment that already
-// holds real Member data beyond the demo set, so a mis-pointed
-// CONVEX_DEPLOY_KEY can't wipe or pollute a live choir's deployment.
+//   demo              — content, so a reviewer opening a preview URL sees a
+//                       populated app instead of empty lists.
+//   upsertRoleMember  — one app Member per Role, pre-linked to a Clerk test
+//                       user, so authenticated E2E and manual review need no
+//                       "promote me" step against a fresh database.
+//
+// Why pre-seeding a Member works without touching the auth path at all:
+// `members.ensureCurrentMember` looks the caller up by `clerkUserId` and, when
+// it finds an existing row, patches only name/email — never role. So a row
+// seeded here with role "director" survives that user's first sign-in.
+
 const DEMO_PIECES = [
   {
     title: "Sicut Cervus",
@@ -30,10 +37,24 @@ const DEMO_PIECES = [
   },
 ];
 
+// Demo content must never land in a real choir's deployment, and a Convex
+// function can't tell which deployment it's running on — so this is gated on
+// an env var that is set only on deployments meant to hold throwaway data.
+function requireSeedableDeployment() {
+  if (process.env.ALLOW_DEMO_SEED !== "true") {
+    throw new Error(
+      "Refusing to seed: ALLOW_DEMO_SEED is not \"true\" on this deployment. " +
+        "Set it only on staging/preview deployments, never production.",
+    );
+  }
+}
+
 export const demo = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
+    requireSeedableDeployment();
+
     const existingPieces = await ctx.db.query("pieces").take(1);
     if (existingPieces.length > 0) {
       return null;
@@ -78,23 +99,37 @@ export const demo = internalMutation({
   },
 });
 
-// Companion to `demo` for preview/staging review: promotes an already
-// signed-in Member so a reviewer can exercise Director-only screens. Split
-// from `demo` because it can only run after that person has signed in once
-// (the Member row is created on first login), whereas `demo` runs before
-// anyone has.
-export const promoteReviewer = internalMutation({
-  args: { email: v.string() },
-  returns: v.null(),
-  handler: async (ctx, { email }) => {
-    const member = await ctx.db
-      .query("members")
-      .withIndex("by_email", (q) => q.eq("email", email))
-      .unique();
-    if (!member) {
-      throw new Error(`No Member found with email ${email} — sign in to the preview app first, then retry.`);
+// Idempotent by clerkUserId, so re-running against an already-seeded
+// deployment corrects drift rather than creating duplicate Members.
+// `clerkUserId` must be the full Clerk token identifier
+// (`<issuer>|<clerk_user_id>`), which is what ensureCurrentMember matches on —
+// `scripts/e2e/seed-role-members.mjs` assembles it from the Clerk Backend API.
+export const upsertRoleMember = internalMutation({
+  args: {
+    clerkUserId: v.string(),
+    name: v.string(),
+    email: v.string(),
+    role: v.union(v.literal("admin"), v.literal("director"), v.literal("chorister")),
+  },
+  returns: v.id("members"),
+  handler: async (ctx, { clerkUserId, name, email, role }) => {
+    requireSeedableDeployment();
+
+    if (!clerkUserId.includes("|")) {
+      throw new Error(
+        `clerkUserId must be a full Clerk token identifier like "<issuer>|user_123", got: ${clerkUserId}`,
+      );
     }
-    await ctx.db.patch("members", member._id, { role: "admin" });
-    return null;
+
+    const existing = await ctx.db
+      .query("members")
+      .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", clerkUserId))
+      .unique();
+    if (existing) {
+      await ctx.db.patch("members", existing._id, { name, email, role });
+      return existing._id;
+    }
+
+    return await ctx.db.insert("members", { clerkUserId, name, email, role });
   },
 });
