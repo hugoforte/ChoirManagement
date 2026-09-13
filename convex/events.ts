@@ -149,31 +149,61 @@ export const rsvp = mutation({
   },
 });
 
-const eventFields = {
-  title: v.string(),
-  description: v.optional(v.string()),
-  startsAt: v.number(),
-  location: v.optional(v.string()),
-  youtubeUrl: v.optional(v.string()),
-  setlist: v.array(v.id("pieces")),
-  visibility: v.union(v.literal("public"), v.literal("private")),
-};
-
-export const create = mutation({
-  args: eventFields,
+// The one caller (EventsManage.tsx's "Add" form) only ever had a title to
+// give — create() used to make it pass five explicit undefineds and invent
+// a startsAt just to satisfy a full-Event-shaped interface. createDraft
+// owns the defaults instead: private, right now, no Setlist yet. The
+// Director edits everything else afterward via update.
+export const createDraft = mutation({
+  args: { title: v.string() },
   returns: v.id("events"),
-  handler: async (ctx, args) => {
+  handler: async (ctx, { title }) => {
     await requireCan(ctx, "manageEvents");
-    return await ctx.db.insert("events", args);
+    return await ctx.db.insert("events", {
+      title,
+      description: undefined,
+      startsAt: Date.now(),
+      location: undefined,
+      youtubeUrl: undefined,
+      setlist: [],
+      visibility: "private",
+    });
   },
 });
 
+// Optional string fields normalize "" to undefined here, not in every form
+// handler that used to repeat `field || undefined` before calling this.
+// Doing it on the server (not the client) is what actually makes clearing
+// a field work: an explicit `undefined` sent from the client is dropped
+// before it reaches the handler — indistinguishable from the key being
+// omitted — but "" survives the wire fine, so the empty-string convention
+// has to be resolved after arguments arrive, not before they're sent.
+function normalizeOptionalText(value: string | undefined): string | undefined {
+  return value || undefined;
+}
+
+// Every field optional — omit whatever didn't change. handleToggleVisibility
+// used to re-send all seven fields just to flip one; now it sends one.
 export const update = mutation({
-  args: { eventId: v.id("events"), ...eventFields },
+  args: {
+    eventId: v.id("events"),
+    title: v.optional(v.string()),
+    description: v.optional(v.string()),
+    startsAt: v.optional(v.number()),
+    location: v.optional(v.string()),
+    youtubeUrl: v.optional(v.string()),
+    setlist: v.optional(v.array(v.id("pieces"))),
+    visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
+  },
   returns: v.null(),
   handler: async (ctx, { eventId, ...fields }) => {
     await requireCan(ctx, "manageEvents");
-    await ctx.db.patch("events", eventId, fields);
+    await ctx.db.patch("events", eventId, {
+      ...fields,
+      ...("description" in fields && { description: normalizeOptionalText(fields.description) }),
+      ...("location" in fields && { location: normalizeOptionalText(fields.location) }),
+      ...("youtubeUrl" in fields && { youtubeUrl: normalizeOptionalText(fields.youtubeUrl) }),
+    });
     return null;
   },
 });

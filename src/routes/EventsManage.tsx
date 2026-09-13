@@ -27,7 +27,7 @@ export default function EventsManage() {
 function EventsManageContent() {
   const now = useMemo(() => Date.now(), []);
   const events = useQuery(api.events.list, { now });
-  const { run: createEvent, pending: creating, error: createError } = useTrackedMutation(api.events.create);
+  const { run: createEvent, pending: creating, error: createError } = useTrackedMutation(api.events.createDraft);
   const { run: removeEvent, error: removeError } = useTrackedMutation(api.events.remove);
   const { run: duplicateEvent, pending: duplicating, error: duplicateError } = useTrackedMutation(
     api.events.duplicate,
@@ -43,15 +43,7 @@ function EventsManageContent() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    const id = await createEvent({
-      title: newTitle.trim(),
-      description: undefined,
-      startsAt: now,
-      location: undefined,
-      youtubeUrl: undefined,
-      setlist: [],
-      visibility: "private",
-    });
+    const id = await createEvent({ title: newTitle.trim() });
     if (id !== undefined) setNewTitle("");
   }
 
@@ -63,12 +55,6 @@ function EventsManageContent() {
   async function handleToggleVisibility(event: Doc<"events">) {
     await updateEvent({
       eventId: event._id,
-      title: event.title,
-      description: event.description,
-      startsAt: event.startsAt,
-      location: event.location,
-      youtubeUrl: event.youtubeUrl,
-      setlist: event.setlist,
       visibility: event.visibility === "public" ? "private" : "public",
     });
   }

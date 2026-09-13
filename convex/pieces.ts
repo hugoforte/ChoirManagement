@@ -47,14 +47,19 @@ export const generateUploadUrl = mutation({
   },
 });
 
+// Shared by create (title required, everything else optional) and update
+// (see below — every field optional there too, for a different reason).
+// Matches the eventFields pattern in convex/events.ts (see #33).
+const pieceFields = {
+  title: v.string(),
+  composer: v.optional(v.string()),
+  arranger: v.optional(v.string()),
+  notes: v.optional(v.string()),
+  youtubeUrl: v.optional(v.string()),
+};
+
 export const create = mutation({
-  args: {
-    title: v.string(),
-    composer: v.optional(v.string()),
-    arranger: v.optional(v.string()),
-    notes: v.optional(v.string()),
-    youtubeUrl: v.optional(v.string()),
-  },
+  args: pieceFields,
   returns: v.id("pieces"),
   handler: async (ctx, args) => {
     await requireCan(ctx, "manageLibrary");
@@ -62,19 +67,34 @@ export const create = mutation({
   },
 });
 
+// "" normalizes to undefined here, not in the form handler that used to
+// repeat `field || undefined` before calling this — see events.ts's update
+// for why that has to happen after arguments arrive, not before they're
+// sent (an explicit undefined is dropped on the wire, indistinguishable
+// from the key being omitted; "" survives it fine).
+function normalizeOptionalText(value: string | undefined): string | undefined {
+  return value || undefined;
+}
+
 export const update = mutation({
   args: {
     pieceId: v.id("pieces"),
-    title: v.string(),
-    composer: v.optional(v.string()),
-    arranger: v.optional(v.string()),
-    notes: v.optional(v.string()),
-    youtubeUrl: v.optional(v.string()),
+    title: v.optional(pieceFields.title),
+    composer: pieceFields.composer,
+    arranger: pieceFields.arranger,
+    notes: pieceFields.notes,
+    youtubeUrl: pieceFields.youtubeUrl,
   },
   returns: v.null(),
   handler: async (ctx, { pieceId, ...fields }) => {
     await requireCan(ctx, "manageLibrary");
-    await ctx.db.patch("pieces", pieceId, fields);
+    await ctx.db.patch("pieces", pieceId, {
+      ...fields,
+      ...("composer" in fields && { composer: normalizeOptionalText(fields.composer) }),
+      ...("arranger" in fields && { arranger: normalizeOptionalText(fields.arranger) }),
+      ...("notes" in fields && { notes: normalizeOptionalText(fields.notes) }),
+      ...("youtubeUrl" in fields && { youtubeUrl: normalizeOptionalText(fields.youtubeUrl) }),
+    });
     return null;
   },
 });
