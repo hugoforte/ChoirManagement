@@ -43,6 +43,7 @@ const reviewedAttachmentValidator = v.object({
 const currentAttachmentValidator = v.object({
   attachment: schema.doc("pieceAttachments"),
   currentVersion: schema.doc("pieceFileVersions"),
+  voiceParts: v.array(schema.doc("voiceParts")),
   url: v.union(v.string(), v.null()),
 });
 
@@ -81,9 +82,20 @@ async function resolveCurrentAttachments(
       if (!currentVersion)
         throw new Error("Active attachment has no current revision");
       requireCurrentRevisionBelongsToAttachment(attachment._id, currentVersion);
+      if (attachment.voicePartIds.length > MAX_VOICE_PARTS_PER_ATTACHMENT) {
+        throw new Error("Attachment has too many voice parts");
+      }
+      const voiceParts = (
+        await Promise.all(
+          attachment.voicePartIds.map((voicePartId) =>
+            ctx.db.get("voiceParts", voicePartId),
+          ),
+        )
+      ).filter((part): part is Doc<"voiceParts"> => part !== null);
       return {
         attachment,
         currentVersion,
+        voiceParts,
         url: await ctx.storage.getUrl(currentVersion.storageId),
       };
     }),
@@ -165,6 +177,24 @@ export const listActive = query({
       ctx,
       await listActiveAttachments(ctx, pieceId),
     );
+  },
+});
+
+export const getMemberDetail = query({
+  args: { pieceId: v.id("pieces") },
+  returns: v.object({
+    piece: schema.doc("pieces"),
+    attachments: v.array(currentAttachmentValidator),
+  }),
+  handler: async (ctx, { pieceId }) => {
+    const piece = await requirePieceAccess(ctx, pieceId);
+    return {
+      piece,
+      attachments: await resolveCurrentAttachments(
+        ctx,
+        await listActiveAttachments(ctx, pieceId),
+      ),
+    };
   },
 });
 

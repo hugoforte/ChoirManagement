@@ -131,7 +131,9 @@ test("a Director publishes a batch atomically and every Member can list it", asy
       displayOrder: 0,
     },
     currentVersion: { revisionNumber: 1, originalFilename: "ave-verum.pdf" },
+    voiceParts: [],
   });
+  expect(listed[1].voiceParts.map((part) => part.name)).toEqual(["Tenor"]);
   expect(listed[0].url).not.toBeNull();
   expect(listed[1].currentVersion.durationSeconds).toBe(62.5);
   const managementDetail = await t
@@ -144,6 +146,12 @@ test("a Director publishes a batch atomically and every Member can list it", asy
   );
   expect(records[0].createdByMemberId).toBeDefined();
   expect(records[1].updatedByMemberId).toBe(records[1].createdByMemberId);
+
+  const memberDetail = await t
+    .withIdentity(choristerIdentity)
+    .query(api.pieceAttachments.getMemberDetail, { pieceId });
+  expect(memberDetail.piece.title).toBe("Ave Verum");
+  expect(memberDetail.attachments).toHaveLength(2);
 });
 
 test("management detail and all management mutations refuse a Chorister", async () => {
