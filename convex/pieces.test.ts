@@ -69,6 +69,6 @@ test("a Chorister can list and view Pieces but cannot create one", async () => {
   expect(list[0].title).toBe("Ubi Caritas");
 
   await expect(asChorister.mutation(api.pieces.create, { title: "Not allowed" })).rejects.toThrow(
-    /Requires role/,
+    /Requires capability: manageLibrary/,
   );
 });

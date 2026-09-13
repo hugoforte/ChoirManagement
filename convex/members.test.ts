@@ -170,5 +170,5 @@ test("updateRole refuses a non-admin caller", async () => {
 
   await expect(
     t.withIdentity(choristerIdentity).mutation(api.members.updateRole, { memberId: targetId, role: "admin" }),
-  ).rejects.toThrow(/Requires role/);
+  ).rejects.toThrow(/Requires capability: assignRoles/);
 });

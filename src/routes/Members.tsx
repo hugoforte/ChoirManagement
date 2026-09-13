@@ -3,7 +3,7 @@ import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
-import { isAdmin } from "../lib/roles";
+import { can } from "../lib/roles";
 import { MemberPage } from "../design/MemberPage";
 import { initials } from "../design/AppShell";
 
@@ -16,7 +16,7 @@ function MembersContent({ viewer }: { viewer: Doc<"members"> }) {
 
   return (
     <>
-      {isAdmin(viewer) && (
+      {can(viewer, "manageRoster") && (
         <Link to="/members/manage" className="mb-4 inline-block text-sm text-brand-600 hover:underline dark:text-brand-400">
           Manage
         </Link>

@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
-import { canManage } from "../lib/roles";
+import { can } from "../lib/roles";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { linkClass } from "../design/forms";
 import NotFound from "./NotFound";
@@ -18,7 +18,7 @@ function EventDetailContent({ viewer }: { viewer: Doc<"members"> }) {
   const { eventId } = useParams<{ eventId: string }>();
   const event = useQuery(api.events.get, { eventId: eventId as Id<"events"> });
   const rsvp = useMutation(api.events.rsvp);
-  const roster = useQuery(api.events.roster, canManage(viewer) ? { eventId: eventId as Id<"events"> } : "skip");
+  const roster = useQuery(api.events.roster, can(viewer, "manageEvents") ? { eventId: eventId as Id<"events"> } : "skip");
   usePageTitle(event?.title);
 
   if (event === null) return <NotFound />;

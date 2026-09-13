@@ -1,6 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { requireMember, requireRole } from "./lib/auth";
+import { requireMember, requireCan } from "./lib/auth";
 import schema from "./schema";
 
 const fileFields = schema.tables.pieces.validator.fields.files.element.fields;
@@ -42,7 +42,7 @@ export const generateUploadUrl = mutation({
   args: {},
   returns: v.string(),
   handler: async (ctx) => {
-    await requireRole(ctx, ["admin", "director"]);
+    await requireCan(ctx, "manageLibrary");
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -57,7 +57,7 @@ export const create = mutation({
   },
   returns: v.id("pieces"),
   handler: async (ctx, args) => {
-    await requireRole(ctx, ["admin", "director"]);
+    await requireCan(ctx, "manageLibrary");
     return await ctx.db.insert("pieces", { ...args, files: [] });
   },
 });
@@ -73,7 +73,7 @@ export const update = mutation({
   },
   returns: v.null(),
   handler: async (ctx, { pieceId, ...fields }) => {
-    await requireRole(ctx, ["admin", "director"]);
+    await requireCan(ctx, "manageLibrary");
     await ctx.db.patch("pieces", pieceId, fields);
     return null;
   },
@@ -83,7 +83,7 @@ export const remove = mutation({
   args: { pieceId: v.id("pieces") },
   returns: v.null(),
   handler: async (ctx, { pieceId }) => {
-    await requireRole(ctx, ["admin", "director"]);
+    await requireCan(ctx, "manageLibrary");
     const piece = await ctx.db.get("pieces", pieceId);
     if (piece) {
       await Promise.all(piece.files.map((file) => ctx.storage.delete(file.storageId)));
@@ -102,7 +102,7 @@ export const attachFile = mutation({
   },
   returns: v.null(),
   handler: async (ctx, { pieceId, storageId, filename, kind }) => {
-    await requireRole(ctx, ["admin", "director"]);
+    await requireCan(ctx, "manageLibrary");
     const piece = await ctx.db.get("pieces", pieceId);
     if (!piece) throw new Error("Piece not found");
     await ctx.db.patch("pieces", pieceId, {
@@ -116,7 +116,7 @@ export const detachFile = mutation({
   args: { pieceId: v.id("pieces"), storageId: v.id("_storage") },
   returns: v.null(),
   handler: async (ctx, { pieceId, storageId }) => {
-    await requireRole(ctx, ["admin", "director"]);
+    await requireCan(ctx, "manageLibrary");
     const piece = await ctx.db.get("pieces", pieceId);
     if (!piece) throw new Error("Piece not found");
     await ctx.storage.delete(storageId);

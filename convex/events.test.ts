@@ -62,7 +62,7 @@ test("create refuses a Chorister", async () => {
   await seedMembers(t);
   await expect(
     t.withIdentity(choristerIdentity).mutation(api.events.create, { ...baseEvent, startsAt: 0 }),
-  ).rejects.toThrow(/Requires role/);
+  ).rejects.toThrow(/Requires capability: manageEvents/);
 });
 
 test("get resolves the Setlist to piece titles and includes the caller's own RSVP", async () => {
@@ -109,7 +109,7 @@ test("roster refuses a Chorister but returns the full list for a Director", asyn
   const eventId = await asDirector.mutation(api.events.create, { ...baseEvent, startsAt: 0 });
   await asChorister.mutation(api.events.rsvp, { eventId, status: "no" });
 
-  await expect(asChorister.query(api.events.roster, { eventId })).rejects.toThrow(/Requires role/);
+  await expect(asChorister.query(api.events.roster, { eventId })).rejects.toThrow(/Requires capability: manageEvents/);
 
   const roster = await asDirector.query(api.events.roster, { eventId });
   expect(roster).toEqual([{ memberId: choristerId, name: "Chris Chorister", status: "no" }]);

@@ -18,13 +18,12 @@ import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
-import { isAdmin } from "../lib/roles";
+import type { Capability } from "../../convex/lib/capabilities";
+import { can } from "../lib/roles";
 import { AppShell } from "./AppShell";
 import { mutedLinkClass } from "./forms";
 
 const DEFAULT_CHOIR_NAME = "ChoirManagement";
-
-type Gate = (viewer: Doc<"members">) => boolean;
 
 const SetPageTitleContext = createContext<(title: string | undefined) => void>(() => {});
 
@@ -41,9 +40,10 @@ export function usePageTitle(title: string | undefined) {
 
 type MemberPageProps = {
   title: string;
-  // Omitted means "any Member." When given and the viewer fails it, they get
-  // the denial screen instead of `children` — the route never sees them.
-  require?: Gate;
+  // Omitted means "any Member." When given and the viewer lacks the named
+  // Capability, they get the denial screen instead of `children` — the
+  // route never sees them.
+  require?: Capability;
   // Where the denial screen points. Only read when `require` is given.
   backTo?: { to: string; label: string };
   children: (viewer: Doc<"members">) => React.ReactNode;
@@ -78,7 +78,7 @@ export function MemberPage(props: MemberPageProps) {
 function ResolvedMemberPage({
   viewer,
   title,
-  require: gate,
+  require: capability,
   backTo,
   children,
 }: MemberPageProps & { viewer: Doc<"members"> }) {
@@ -88,10 +88,10 @@ function ResolvedMemberPage({
   const shell = {
     choirName: choirSettings?.name ?? DEFAULT_CHOIR_NAME,
     viewerName: viewer.name,
-    showSettings: isAdmin(viewer),
+    showSettings: can(viewer, "manageSettings"),
   };
 
-  if (gate && !gate(viewer)) {
+  if (capability && !can(viewer, capability)) {
     return (
       <AppShell {...shell} pageTitle={title}>
         <p className="text-sm text-stone-600 dark:text-stone-400">You don't have access to this page.</p>
