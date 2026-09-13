@@ -73,6 +73,30 @@ test("a Chorister can list and view Pieces but cannot create one", async () => {
   );
 });
 
+test("update patches only the given fields, leaving the rest untouched", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pieceId = await asDirector.mutation(api.pieces.create, { title: "Ubi Caritas", composer: "Palestrina" });
+
+  await asDirector.mutation(api.pieces.update, { pieceId, title: "Ubi Caritas (renamed)" });
+
+  const piece = await t.run(async (ctx) => await ctx.db.get("pieces", pieceId));
+  expect(piece).toMatchObject({ title: "Ubi Caritas (renamed)", composer: "Palestrina" });
+});
+
+test("update normalizes an empty string to undefined, actually clearing the field", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pieceId = await asDirector.mutation(api.pieces.create, { title: "Ubi Caritas", composer: "Palestrina" });
+
+  await asDirector.mutation(api.pieces.update, { pieceId, composer: "" });
+
+  const piece = await t.run(async (ctx) => await ctx.db.get("pieces", pieceId));
+  expect(piece?.composer).toBeUndefined();
+});
+
 test("update refuses a Chorister", async () => {
   const t = convexTest(schema, modules);
   await seedMembers(t);
