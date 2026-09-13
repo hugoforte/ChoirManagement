@@ -1,8 +1,9 @@
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
 import { can } from "../lib/roles";
+import { useTrackedMutation } from "../lib/useTrackedMutation";
 import { MemberPage } from "../design/MemberPage";
 import { inputClass, cardClass } from "../design/forms";
 
@@ -28,7 +29,7 @@ export default function MembersManage() {
 // mutation enforces the same split independently (members.ts's updateRole).
 function MembersManageContent({ viewer }: { viewer: Doc<"members"> }) {
   const members = useQuery(api.members.list);
-  const updateRole = useMutation(api.members.updateRole);
+  const { run: updateRole, error } = useTrackedMutation(api.members.updateRole);
   const canAssignRoles = can(viewer, "assignRoles");
 
   async function handleRoleChange(memberId: Id<"members">, role: Role) {
@@ -37,6 +38,7 @@ function MembersManageContent({ viewer }: { viewer: Doc<"members"> }) {
 
   return (
     <>
+      {error && <p className="mb-2 text-sm text-danger">{error}</p>}
       {members === undefined ? (
         <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>
       ) : (

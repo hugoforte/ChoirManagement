@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
+import { useTrackedMutation } from "../lib/useTrackedMutation";
 import { MemberPage } from "../design/MemberPage";
 import { inputClass, labelClass, primaryButtonClass } from "../design/forms";
 
@@ -16,12 +17,19 @@ export default function Settings() {
 
 function SettingsContent() {
   const settings = useQuery(api.choirSettings.get);
-  const update = useMutation(api.choirSettings.update);
-  const generateLogoUploadUrl = useMutation(api.choirSettings.generateLogoUploadUrl);
+  const { run: update, pending: saving, error: saveError } = useTrackedMutation(api.choirSettings.update);
+  const { run: generateLogoUploadUrl, error: generateError } = useTrackedMutation(
+    api.choirSettings.generateLogoUploadUrl,
+  );
 
   const [fields, setFields] = useState({ name: "", description: "", contactEmail: "" });
   const [uploading, setUploading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  // The raw fetch POST below isn't a Convex mutation, so useTrackedMutation
+  // can't wrap it — a dedicated upload seam is #32's job, on top of this
+  // ticket's hook rather than a duplicate of it.
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const error = saveError ?? generateError ?? uploadError;
 
   // Convex's singleton settings doc loads asynchronously (starts undefined),
   // so the form fields can't just be initialized from it at useState time —
@@ -37,25 +45,22 @@ function SettingsContent() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true);
-    try {
-      await update({
-        name: fields.name,
-        description: fields.description || undefined,
-        contactEmail: fields.contactEmail || undefined,
-        logoStorageId: settings?.logoStorageId,
-      });
-    } finally {
-      setSaving(false);
-    }
+    await update({
+      name: fields.name,
+      description: fields.description || undefined,
+      contactEmail: fields.contactEmail || undefined,
+      logoStorageId: settings?.logoStorageId,
+    });
   }
 
   async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
+    setUploadError(null);
     try {
       const uploadUrl = await generateLogoUploadUrl();
+      if (uploadUrl === undefined) return; // generateLogoUploadUrl's own error is already surfaced
       const res = await fetch(uploadUrl, {
         method: "POST",
         headers: { "Content-Type": file.type || "application/octet-stream" },
@@ -68,6 +73,8 @@ function SettingsContent() {
         contactEmail: fields.contactEmail || undefined,
         logoStorageId: storageId,
       });
+    } catch {
+      setUploadError("Upload failed. Please try again.");
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -80,6 +87,7 @@ function SettingsContent() {
         <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>
       ) : (
         <div className="max-w-xl space-y-6">
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div>
             <p className={labelClass}>Logo</p>
             {settings?.logoUrl ? (

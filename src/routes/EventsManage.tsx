@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
+import { useTrackedMutation } from "../lib/useTrackedMutation";
 import { MemberPage } from "../design/MemberPage";
 import { inputClass, primaryButtonClass, dangerLinkClass, cardClass } from "../design/forms";
 
@@ -26,32 +27,32 @@ export default function EventsManage() {
 function EventsManageContent() {
   const now = useMemo(() => Date.now(), []);
   const events = useQuery(api.events.list, { now });
-  const createEvent = useMutation(api.events.create);
-  const removeEvent = useMutation(api.events.remove);
-  const duplicateEvent = useMutation(api.events.duplicate);
-  const updateEvent = useMutation(api.events.update);
+  const { run: createEvent, pending: creating, error: createError } = useTrackedMutation(api.events.create);
+  const { run: removeEvent, error: removeError } = useTrackedMutation(api.events.remove);
+  const { run: duplicateEvent, pending: duplicating, error: duplicateError } = useTrackedMutation(
+    api.events.duplicate,
+  );
+  const { run: updateEvent, error: toggleError } = useTrackedMutation(api.events.update);
 
   const [newTitle, setNewTitle] = useState("");
-  const [creating, setCreating] = useState(false);
+
+  // One combined slot rather than four separately-rendered messages — only
+  // one of these actions is ever in flight at a time from a single click.
+  const error = createError ?? removeError ?? duplicateError ?? toggleError;
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    setCreating(true);
-    try {
-      await createEvent({
-        title: newTitle.trim(),
-        description: undefined,
-        startsAt: now,
-        location: undefined,
-        youtubeUrl: undefined,
-        setlist: [],
-        visibility: "private",
-      });
-      setNewTitle("");
-    } finally {
-      setCreating(false);
-    }
+    const id = await createEvent({
+      title: newTitle.trim(),
+      description: undefined,
+      startsAt: now,
+      location: undefined,
+      youtubeUrl: undefined,
+      setlist: [],
+      visibility: "private",
+    });
+    if (id !== undefined) setNewTitle("");
   }
 
   async function handleDelete(event: Doc<"events">) {
@@ -86,6 +87,7 @@ function EventsManageContent() {
           Add
         </button>
       </form>
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
 
       {events === undefined ? (
         <p className="mt-4 text-sm text-stone-500 dark:text-stone-400">Loading…</p>
@@ -111,7 +113,8 @@ function EventsManageContent() {
                   </button>
                   <button
                     onClick={() => duplicateEvent({ eventId: event._id })}
-                    className="text-stone-600 underline hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100"
+                    disabled={duplicating}
+                    className="text-stone-600 underline hover:text-stone-900 disabled:opacity-50 dark:text-stone-400 dark:hover:text-stone-100"
                   >
                     Duplicate
                   </button>

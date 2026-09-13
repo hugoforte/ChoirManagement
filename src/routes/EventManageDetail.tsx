@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
+import { useTrackedMutation } from "../lib/useTrackedMutation";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { inputClass, labelClass, primaryButtonClass, dangerLinkClass } from "../design/forms";
 import NotFound from "./NotFound";
@@ -27,7 +28,7 @@ function EventManageDetailContent() {
   const id = eventId as Id<"events">;
   const event = useQuery(api.events.get, { eventId: id });
   const pieces = useQuery(api.pieces.list);
-  const updateEvent = useMutation(api.events.update);
+  const { run: updateEvent, pending: saving, error: saveError } = useTrackedMutation(api.events.update);
 
   const [fields, setFields] = useState({
     title: "",
@@ -39,7 +40,6 @@ function EventManageDetailContent() {
   });
   const [setlist, setSetlist] = useState<Id<"pieces">[]>([]);
   const [addPieceId, setAddPieceId] = useState("");
-  const [saving, setSaving] = useState(false);
 
   usePageTitle(event?.title);
 
@@ -67,21 +67,16 @@ function EventManageDetailContent() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true);
-    try {
-      await updateEvent({
-        eventId: id,
-        title: fields.title,
-        description: fields.description || undefined,
-        startsAt: new Date(fields.startsAt).getTime(),
-        location: fields.location || undefined,
-        youtubeUrl: fields.youtubeUrl || undefined,
-        setlist,
-        visibility: fields.visibility,
-      });
-    } finally {
-      setSaving(false);
-    }
+    await updateEvent({
+      eventId: id,
+      title: fields.title,
+      description: fields.description || undefined,
+      startsAt: new Date(fields.startsAt).getTime(),
+      location: fields.location || undefined,
+      youtubeUrl: fields.youtubeUrl || undefined,
+      setlist,
+      visibility: fields.visibility,
+    });
   }
 
   function moveSetlistItem(index: number, direction: -1 | 1) {
@@ -236,6 +231,7 @@ function EventManageDetailContent() {
           <button type="submit" disabled={saving || !fields.title.trim()} className={primaryButtonClass}>
             Save
           </button>
+          {saveError && <p className="text-sm text-danger">{saveError}</p>}
         </form>
       )}
     </>
