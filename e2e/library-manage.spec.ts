@@ -77,9 +77,9 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
 
   await page.goto("/library");
   await page.getByRole("link", { name: title }).click();
-  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("heading", { name: title, exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open main score" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Rehearsal" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Rehearsal", exact: true })).toBeVisible();
   await expect(
     page.getByRole("link", { name: /Download .*Full Score\.pdf/ }),
   ).toBeVisible();
