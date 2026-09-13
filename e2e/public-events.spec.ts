@@ -15,6 +15,18 @@ test("public Events page loads for a guest visitor", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
 });
 
+// Regression coverage for the exact class of bug MemberPage's split into a
+// gate + ResolvedMemberPage exists to prevent (see #27): a Member-only route
+// must redirect a signed-out visitor before any requireMember-backed query
+// (like choirSettings.get) ever subscribes, not throw and blank the page.
+test("a signed-out visitor hitting a Member-only route is redirected to the public Events page", async ({
+  page,
+}) => {
+  await page.goto("/events");
+  await expect(page).toHaveURL(/\/public\/events$/);
+  await expect(page.getByRole("heading", { name: "Upcoming Events" })).toBeVisible();
+});
+
 test("guest can open a public Event and see its Setlist", async ({ page }) => {
   await page.goto("/public/events");
   await page.getByRole("link", { name: "Spring Concert" }).click();

@@ -53,7 +53,7 @@ export default defineConfig({
     },
     {
       name: "chromium-director",
-      testMatch: /(library-manage|events-manage)\.spec\.ts/,
+      testMatch: /(library-manage|events-manage|access-denied)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], storageState: ".auth/director.json" },
       dependencies: ["setup"],
     },
