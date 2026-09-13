@@ -92,13 +92,14 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
   const error = saveError ?? removeError ?? attachError ?? detachError ?? uploadError;
 
   async function handleSave() {
+    // "" normalizes to undefined server-side now, not here.
     await updatePiece({
       pieceId: piece._id,
       title: fields.title,
-      composer: fields.composer || undefined,
-      arranger: fields.arranger || undefined,
-      notes: fields.notes || undefined,
-      youtubeUrl: fields.youtubeUrl || undefined,
+      composer: fields.composer,
+      arranger: fields.arranger,
+      notes: fields.notes,
+      youtubeUrl: fields.youtubeUrl,
     });
   }
 

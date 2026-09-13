@@ -130,7 +130,7 @@ Before committing code:
 
 See `docs/architecture/ci-cd-and-testing.md` for the full design and status. Summary:
 
-- `.github/workflows/pr-checks.yml`: `npm run check` + `npm test`, every PR and push to `main`.
+- `.github/workflows/pr-checks.yml`: `npm run check` + `npm test`, every PR (any base branch — required for stacked PRs via `gh stack` to report status) and every push to `main`.
 - `.github/workflows/preview-playwright.yml`: `e2e-guest` and `e2e-authenticated` run on PRs against that branch's own preview deployment (`chromium-director` and `chromium-admin` are real — see `e2e/auth.setup.ts` / `e2e/auth-admin.setup.ts`). `production-smoke` runs read-only against the stable production alias after pushes to `main` and daily. `chromium-chorister` doesn't exist yet (no chorister-only UI). Deliberately **not** triggered on `push: "**"`: that fires twice per PR commit and a cancelled duplicate blocks the merge.
 - Vercel git integration: builds + deploys on push, no separate deploy workflow. A push to a feature branch gets its own isolated preview deployment (separate URL, separate Convex backend) — production is untouched until the branch merges to `main`.
 - Requires `VERCEL_TOKEN`/`VERCEL_PROJECT_ID`/`VERCEL_TEAM_ID`/`VERCEL_AUTOMATION_BYPASS_SECRET` as GitHub secrets for preview E2E (already set on this repo); preview jobs skip gracefully if a self-hoster's fork lacks them. Scheduled production smoke needs no credentials.
@@ -150,6 +150,20 @@ When asked for a feature rather than a small tweak, prefer this end-to-end path:
 8. Report back with: the PR reference, the production deployment URL, and a concise validation summary (what you ran, what passed, both pre-merge on preview and post-merge on production).
 
 Don't skip tests for user-facing changes unless the environment makes them genuinely impossible (e.g. a Clerk-dependent flow blocked by the preview-URL limitation above).
+
+### Multi-PR efforts with real cross-PR dependencies: use `gh stack`
+
+When a larger effort splits into several PRs and one genuinely depends on another's changes (not just "created around the same time" — actually touches lines the other PR introduced), use the [`gh stack`](https://docs.github.com/en/pull-requests/how-tos/stacked-pull-requests) extension (`gh extension install github/gh-stack`) instead of hand-basing a branch on another feature branch and manually rebasing after it merges:
+
+- `gh stack init <branch>` / `gh stack add <branch>` to build the chain locally.
+- `gh stack submit` to push every layer and open/update all the PRs at once.
+- `gh stack sync` to pull `main`, cascade-rebase the whole stack, and resync PR state — this is the step that replaces manually rebasing a dependent branch after its predecessor merges.
+- `gh stack view` / `gh stack checkout <pr-number>` to inspect or switch between layers.
+- `gh stack link <pr-a> <pr-b> ...` to retroactively wire already-open PRs into a tracked stack (bottom to top) without recreating branches.
+
+Don't force independent PRs into a stack just because they shipped together — check actual file overlap first. Only chain PRs that would otherwise conflict or depend on each other's code.
+
+**`pr-checks.yml`'s `pull_request` trigger has no `branches:` filter for exactly this reason**: `main`'s branch protection requires the `check` status, and a stacked PR targets an intermediate branch, not `main` — if the workflow only fired for `main`-targeting PRs, `check` would sit as "Expected" forever on every non-bottom layer and block the whole stack from merging.
 
 ## Core Development Rules
 

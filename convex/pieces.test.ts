@@ -72,3 +72,93 @@ test("a Chorister can list and view Pieces but cannot create one", async () => {
     /Requires capability: manageLibrary/,
   );
 });
+
+test("update patches only the given fields, leaving the rest untouched", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pieceId = await asDirector.mutation(api.pieces.create, { title: "Ubi Caritas", composer: "Palestrina" });
+
+  await asDirector.mutation(api.pieces.update, { pieceId, title: "Ubi Caritas (renamed)" });
+
+  const piece = await t.run(async (ctx) => await ctx.db.get("pieces", pieceId));
+  expect(piece).toMatchObject({ title: "Ubi Caritas (renamed)", composer: "Palestrina" });
+});
+
+test("update normalizes an empty string to undefined, actually clearing the field", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pieceId = await asDirector.mutation(api.pieces.create, { title: "Ubi Caritas", composer: "Palestrina" });
+
+  await asDirector.mutation(api.pieces.update, { pieceId, composer: "" });
+
+  const piece = await t.run(async (ctx) => await ctx.db.get("pieces", pieceId));
+  expect(piece?.composer).toBeUndefined();
+});
+
+test("update refuses a Chorister", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pieceId = await asDirector.mutation(api.pieces.create, { title: "Ubi Caritas" });
+
+  await expect(
+    t.withIdentity(choristerIdentity).mutation(api.pieces.update, { pieceId, title: "Renamed" }),
+  ).rejects.toThrow(/Requires capability: manageLibrary/);
+});
+
+test("remove refuses a Chorister", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pieceId = await asDirector.mutation(api.pieces.create, { title: "Ubi Caritas" });
+
+  await expect(t.withIdentity(choristerIdentity).mutation(api.pieces.remove, { pieceId })).rejects.toThrow(
+    /Requires capability: manageLibrary/,
+  );
+});
+
+test("generateUploadUrl refuses a Chorister", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+
+  await expect(t.withIdentity(choristerIdentity).mutation(api.pieces.generateUploadUrl, {})).rejects.toThrow(
+    /Requires capability: manageLibrary/,
+  );
+});
+
+test("attachFile refuses a Chorister", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pieceId = await asDirector.mutation(api.pieces.create, { title: "Ubi Caritas" });
+  const storageId = await t.run(async (ctx) => await ctx.storage.store(new Blob(["fake pdf bytes"])));
+
+  await expect(
+    t.withIdentity(choristerIdentity).mutation(api.pieces.attachFile, {
+      pieceId,
+      storageId,
+      filename: "ubi-caritas.pdf",
+      kind: "pdf",
+    }),
+  ).rejects.toThrow(/Requires capability: manageLibrary/);
+});
+
+test("detachFile refuses a Chorister", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pieceId = await asDirector.mutation(api.pieces.create, { title: "Ubi Caritas" });
+  const storageId = await t.run(async (ctx) => await ctx.storage.store(new Blob(["fake pdf bytes"])));
+  await asDirector.mutation(api.pieces.attachFile, {
+    pieceId,
+    storageId,
+    filename: "ubi-caritas.pdf",
+    kind: "pdf",
+  });
+
+  await expect(
+    t.withIdentity(choristerIdentity).mutation(api.pieces.detachFile, { pieceId, storageId }),
+  ).rejects.toThrow(/Requires capability: manageLibrary/);
+});
