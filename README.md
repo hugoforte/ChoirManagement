@@ -1,5 +1,7 @@
 # ChoirManagement
 
+> Live demo: [ahava-choir-management.vercel.app](https://ahava-choir-management.vercel.app/)
+
 An open-source, self-hosted web app for choirs to manage their music library, member roster, and event scheduling — built on [Convex](https://convex.dev), [Clerk](https://clerk.com), and [Vercel](https://vercel.com).
 
 Each choir runs its own instance: your own Convex project, your own Clerk app, your own Vercel deployment. No shared backend, no vendor lock-in beyond the free tiers those services already offer. See [`CONTEXT.md`](./CONTEXT.md) for the domain vocabulary and [`docs/adr/`](./docs/adr/) for why the stack looks the way it does.
@@ -13,7 +15,7 @@ Each choir runs its own instance: your own Convex project, your own Clerk app, y
 
 ## Status
 
-A first vertical slice — sign-in, the Member dashboard, and the public Events page — is built and validated end-to-end against a real Convex + Clerk + Vercel deployment (not just designed on paper). Most of the app (Music Library UI, Member roster UI, Event management, Settings) isn't built yet; see [`docs/architecture/frontend-routes.md`](./docs/architecture/frontend-routes.md) for the full planned route map and what's live today.
+The v1 product slice is implemented and validated end-to-end against a real Convex + Clerk + Vercel deployment. It includes sign-in, the Member dashboard, Music Library, Member roster and role management, Event scheduling with RSVPs and Setlists, Admin Settings, public Events, and a responsive light/dark app shell. The next planned product feature is an availability survey for checking choir availability across proposed concert dates ([issue #9](https://github.com/hugoforte/ChoirManagement/issues/9)). See [`docs/architecture/frontend-routes.md`](./docs/architecture/frontend-routes.md) for the route map.
 
 ## Get started
 
