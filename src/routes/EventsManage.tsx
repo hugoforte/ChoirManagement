@@ -5,16 +5,9 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
 import { useTrackedMutation } from "../lib/useTrackedMutation";
+import { toDatetimeLocal } from "../lib/datetime";
 import { MemberPage } from "../design/MemberPage";
 import { inputClass, primaryButtonClass, dangerLinkClass, cardClass } from "../design/forms";
-
-// datetime-local wants "YYYY-MM-DDTHH:mm" in local time, not the UTC ISO
-// string Date#toISOString gives — build it from local getters instead.
-function toDatetimeLocal(ms: number) {
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 export default function EventsManage() {
   return (

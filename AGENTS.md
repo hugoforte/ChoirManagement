@@ -63,7 +63,9 @@ ChoirManagement/
 ├── e2e/                             # Playwright specs
 ├── src/
 │   ├── App.tsx, main.tsx
-│   └── routes/                      # One file per route (see docs/architecture/frontend-routes.md)
+│   ├── routes/                      # One file per route (see docs/architecture/frontend-routes.md)
+│   ├── test/setup.ts                # jsdom polyfills (matchMedia, localStorage) + jest-dom matchers
+│   └── **/*.test.{ts,tsx}           # Vitest + Testing Library, jsdom (see #34)
 │
 ├── docs/
 │   ├── adr/                         # Architecture decision records
@@ -77,7 +79,7 @@ ChoirManagement/
 ├── scripts/e2e/                     # Clerk test users + per-Role Member seeding
 ├── vercel.json                      # Build command + SPA rewrite
 ├── playwright.config.ts
-├── vitest.config.ts                 # Scoped to convex/**/*.test.ts — don't let it pick up e2e/
+├── vitest.config.ts                 # convex/**/*.test.ts (edge-runtime) + src/**/*.test.{ts,tsx} (jsdom) — don't let it pick up e2e/
 └── CONTEXT.md                       # Domain vocabulary
 ```
 
@@ -104,13 +106,14 @@ Vercel's git integration deploys on push to `main` — no GitHub Actions deploy 
 
 ```bash
 npm run check     # tsc (convex + app) + vite build
-npm test          # vitest run (convex/**/*.test.ts only)
+npm test          # vitest run (convex/**/*.test.ts + src/**/*.test.{ts,tsx})
 npm run test:e2e  # playwright test
 ```
 
 Current suite shape:
 
-- `convex/*.test.ts`: convex-test unit tests, using `t.withIdentity()` to simulate authenticated Members.
+- `convex/*.test.ts`: convex-test unit tests, using `t.withIdentity()` to simulate authenticated Members. Runs under `environment: "edge-runtime"`.
+- `src/**/*.test.{ts,tsx}`: Vitest + `@testing-library/react`, under `environment: "jsdom"` (`vitest.config.ts`'s `environmentMatchGlobs`) — pure-function tests (`src/lib/*.test.ts`) and component/hook tests that mock `@clerk/clerk-react` and `convex/react` at the module boundary rather than standing up a real Clerk/Convex/Router stack (see #34). `src/test/convexMocks.ts` holds the one cast every `useMutation`/`useQuery` mock needs (`ReactMutation`'s real return type isn't structurally satisfied by a plain `vi.fn()`); compare a query reference with `getFunctionName` (from `convex/server`), never `===` — `api.foo.bar` is a fresh Proxy on every access.
 - `e2e/public-events.spec.ts`: the `chromium-guest` project — Clerk-free and deterministic against auto-seeded preview deployments. Its seeded Event assertions must not run against production.
 - `e2e/production-smoke.spec.ts`: the `chromium-production-smoke` project — Clerk-free, read-only, and seed-independent. It checks the stable production alias after each `main` deployment and daily; an optional `PRODUCTION_PUBLIC_EVENT_ID` repository variable enables a real public Event detail canary.
 - `e2e/library-manage.spec.ts` and `e2e/events-manage.spec.ts`: the `chromium-director` project, signed in via `e2e/auth.setup.ts`.

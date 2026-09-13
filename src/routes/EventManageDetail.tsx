@@ -5,15 +5,11 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { useTrackedMutation } from "../lib/useTrackedMutation";
+import { toDatetimeLocal } from "../lib/datetime";
+import { moveSetlistItem } from "../lib/setlist";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { inputClass, labelClass, primaryButtonClass, dangerLinkClass } from "../design/forms";
 import NotFound from "./NotFound";
-
-function toDatetimeLocal(ms: number) {
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 export default function EventManageDetail() {
   return (
@@ -80,12 +76,8 @@ function EventManageDetailContent() {
     });
   }
 
-  function moveSetlistItem(index: number, direction: -1 | 1) {
-    const next = [...setlist];
-    const swapWith = index + direction;
-    if (swapWith < 0 || swapWith >= next.length) return;
-    [next[index], next[swapWith]] = [next[swapWith], next[index]];
-    setSetlist(next);
+  function moveSetlist(index: number, direction: -1 | 1) {
+    setSetlist((items) => moveSetlistItem(items, index, direction));
   }
 
   return (
@@ -180,12 +172,12 @@ function EventManageDetailContent() {
                   <li key={pieceId} className="flex items-center justify-between text-sm">
                     <span>{pieceTitleById.get(pieceId) ?? "Untitled"}</span>
                     <span className="flex gap-2">
-                      <button type="button" onClick={() => moveSetlistItem(i, -1)} disabled={i === 0}>
+                      <button type="button" onClick={() => moveSetlist(i, -1)} disabled={i === 0}>
                         ↑
                       </button>
                       <button
                         type="button"
-                        onClick={() => moveSetlistItem(i, 1)}
+                        onClick={() => moveSetlist(i, 1)}
                         disabled={i === setlist.length - 1}
                       >
                         ↓

@@ -94,6 +94,18 @@ jobs:
           PLAYWRIGHT_BASE_URL: ${{ steps.deployment.outputs.deployment_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
 
+      # A failed run otherwise leaves nothing to inspect — the job log has
+      # the assertion, not the trace/screenshot that explains it (see #34).
+      - name: Upload Playwright report and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-e2e-guest
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
   production-smoke:
     if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
@@ -139,6 +151,16 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://choir-management-tawny.vercel.app' }}
           PRODUCTION_PUBLIC_EVENT_ID: ${{ vars.PRODUCTION_PUBLIC_EVENT_ID }}
+
+      - name: Upload Playwright report and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-production-smoke
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
 
   # Runs on PRs, against the branch's OWN preview deployment — not against
   # production. Authenticated coverage is most useful before a merge, and
@@ -202,3 +224,13 @@ jobs:
           # exact env var name as one of its fallbacks.
           VITE_CLERK_PUBLISHABLE_KEY: pk_test_bGVuaWVudC1vcmNhLTUwNzkuY2xlcmsuYWNjb3VudHMuZGV2JA
           E2E_DIRECTOR_EMAIL: ${{ secrets.E2E_DIRECTOR_EMAIL }}
+
+      - name: Upload Playwright report and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-e2e-authenticated
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
