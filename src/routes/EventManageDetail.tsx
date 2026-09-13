@@ -74,7 +74,10 @@ function EventManageDetailContent({ viewer }: { viewer: Doc<"members"> }) {
     });
     setSetlist(event.setlist.map((p) => p._id));
     // Only re-sync when a different Event loads, not on every field change.
-  }, [event === undefined ? undefined : event._id]);
+    // `event ? event._id : undefined`, not `=== undefined ? undefined :
+    // event._id` — the latter only narrows out `undefined`, leaving `event`
+    // possibly `null` where `._id` is read.
+  }, [event ? event._id : undefined]);
 
   if (event === null) return <NotFound />;
 
