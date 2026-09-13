@@ -4,9 +4,9 @@ import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
-import { MemberGate, canManage, isAdmin } from "../lib/memberGate";
-import { AppShell } from "../design/AppShell";
-import { inputClass, primaryButtonClass, mutedLinkClass, dangerLinkClass, cardClass } from "../design/forms";
+import { canManage } from "../lib/roles";
+import { MemberPage } from "../design/MemberPage";
+import { inputClass, primaryButtonClass, dangerLinkClass, cardClass } from "../design/forms";
 
 // datetime-local wants "YYYY-MM-DDTHH:mm" in local time, not the UTC ISO
 // string Date#toISOString gives — build it from local getters instead.
@@ -18,31 +18,13 @@ function toDatetimeLocal(ms: number) {
 
 export default function EventsManage() {
   return (
-    <MemberGate>
-      {(viewer) => (canManage(viewer) ? <EventsManageContent viewer={viewer} /> : <NoAccess viewer={viewer} />)}
-    </MemberGate>
+    <MemberPage title="Manage Events" require={canManage} backTo={{ to: "/events", label: "Back to Events" }}>
+      {() => <EventsManageContent />}
+    </MemberPage>
   );
 }
 
-function NoAccess({ viewer }: { viewer: Doc<"members"> }) {
-  const choirSettings = useQuery(api.choirSettings.get);
-  return (
-    <AppShell
-      choirName={choirSettings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle="Events"
-    >
-      <p className="text-sm text-stone-600 dark:text-stone-400">You don't have access to this page.</p>
-      <Link to="/events" className={mutedLinkClass}>
-        Back to Events
-      </Link>
-    </AppShell>
-  );
-}
-
-function EventsManageContent({ viewer }: { viewer: Doc<"members"> }) {
-  const choirSettings = useQuery(api.choirSettings.get);
+function EventsManageContent() {
   const now = useMemo(() => Date.now(), []);
   const events = useQuery(api.events.list, { now });
   const createEvent = useMutation(api.events.create);
@@ -92,12 +74,7 @@ function EventsManageContent({ viewer }: { viewer: Doc<"members"> }) {
   }
 
   return (
-    <AppShell
-      choirName={choirSettings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle="Manage Events"
-    >
+    <>
       <form onSubmit={handleCreate} className="flex gap-2">
         <input
           type="text"
@@ -148,6 +125,6 @@ function EventsManageContent({ viewer }: { viewer: Doc<"members"> }) {
           ))}
         </ul>
       )}
-    </AppShell>
+    </>
   );
 }

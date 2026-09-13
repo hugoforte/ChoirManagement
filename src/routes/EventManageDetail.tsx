@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
-import { Doc, Id } from "../../convex/_generated/dataModel";
-import { MemberGate, canManage, isAdmin } from "../lib/memberGate";
-import { AppShell } from "../design/AppShell";
-import { inputClass, labelClass, primaryButtonClass, mutedLinkClass, dangerLinkClass } from "../design/forms";
+import { Id } from "../../convex/_generated/dataModel";
+import { canManage } from "../lib/roles";
+import { MemberPage, usePageTitle } from "../design/MemberPage";
+import { inputClass, labelClass, primaryButtonClass, dangerLinkClass } from "../design/forms";
 import NotFound from "./NotFound";
 
 function toDatetimeLocal(ms: number) {
@@ -17,33 +17,13 @@ function toDatetimeLocal(ms: number) {
 
 export default function EventManageDetail() {
   return (
-    <MemberGate>
-      {(viewer) =>
-        canManage(viewer) ? <EventManageDetailContent viewer={viewer} /> : <NoAccess viewer={viewer} />
-      }
-    </MemberGate>
+    <MemberPage title="Edit Event" require={canManage} backTo={{ to: "/events", label: "Back to Events" }}>
+      {() => <EventManageDetailContent />}
+    </MemberPage>
   );
 }
 
-function NoAccess({ viewer }: { viewer: Doc<"members"> }) {
-  const choirSettings = useQuery(api.choirSettings.get);
-  return (
-    <AppShell
-      choirName={choirSettings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle="Events"
-    >
-      <p className="text-sm text-stone-600 dark:text-stone-400">You don't have access to this page.</p>
-      <Link to="/events" className={mutedLinkClass}>
-        Back to Events
-      </Link>
-    </AppShell>
-  );
-}
-
-function EventManageDetailContent({ viewer }: { viewer: Doc<"members"> }) {
-  const choirSettings = useQuery(api.choirSettings.get);
+function EventManageDetailContent() {
   const { eventId } = useParams<{ eventId: string }>();
   const id = eventId as Id<"events">;
   const event = useQuery(api.events.get, { eventId: id });
@@ -61,6 +41,8 @@ function EventManageDetailContent({ viewer }: { viewer: Doc<"members"> }) {
   const [setlist, setSetlist] = useState<Id<"pieces">[]>([]);
   const [addPieceId, setAddPieceId] = useState("");
   const [saving, setSaving] = useState(false);
+
+  usePageTitle(event?.title);
 
   useEffect(() => {
     if (!event) return;
@@ -109,12 +91,7 @@ function EventManageDetailContent({ viewer }: { viewer: Doc<"members"> }) {
   }
 
   return (
-    <AppShell
-      choirName={choirSettings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle={event === undefined ? "Edit Event" : event.title}
-    >
+    <>
       {event === undefined ? (
         <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>
       ) : (
@@ -259,6 +236,6 @@ function EventManageDetailContent({ viewer }: { viewer: Doc<"members"> }) {
           </button>
         </form>
       )}
-    </AppShell>
+    </>
   );
 }
