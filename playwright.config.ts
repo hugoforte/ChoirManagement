@@ -10,6 +10,15 @@ import { defineConfig, devices } from "@playwright/test";
 // a broken account for one Role can't block the other's E2E. chromium-chorister
 // doesn't exist yet (no chorister-only UI to test against). See
 // docs/architecture/ci-cd-and-testing.md.
+//
+// chromium-guest-clerk is neither of those: it's anonymous (no storageState,
+// no dependencies), but it's not Clerk-free either, because it hits a gated
+// route whose useAuth() needs Clerk's SDK to actually boot. It rides in
+// preview-playwright.yml's e2e-authenticated job instead of e2e-guest's, so
+// it inherits CLERK_SECRET_KEY and can call setupClerkTestingToken to bypass
+// bot detection — chromium-guest's job carries no Clerk secret at all, by
+// design, and a Clerk-touching test placed there hung past every timeout in
+// CI even though it passed reliably run standalone (see e2e/gate-redirect.spec.ts).
 
 const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 const bypassHeaders = bypassSecret
@@ -52,6 +61,11 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      name: "setup-clerk-anon",
+      testMatch: /clerk-anon\.setup\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
       name: "chromium-director",
       testMatch: /(library-manage|events-manage|access-denied)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], storageState: ".auth/director.json" },
@@ -62,6 +76,12 @@ export default defineConfig({
       testMatch: /(settings-manage|members-manage)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], storageState: ".auth/admin.json" },
       dependencies: ["setup-admin"],
+    },
+    {
+      name: "chromium-guest-clerk",
+      testMatch: /gate-redirect\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+      dependencies: ["setup-clerk-anon"],
     },
   ],
 });
