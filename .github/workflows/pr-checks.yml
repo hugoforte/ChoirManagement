@@ -1,8 +1,14 @@
 name: CI checks
 
 on:
+  # No branches: filter on pull_request — main's branch protection requires
+  # "check" as a status, and gh-stack correctly enforces that same
+  # requirement on every layer of a stack, not just the one merging into
+  # main directly. A PR targeting an intermediate stack branch still needs
+  # this job to run and report, or the required check sits as "Expected"
+  # forever and blocks the stack from merging (see #45). preview-playwright.yml's
+  # pull_request trigger already has no branch filter for the same reason.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
