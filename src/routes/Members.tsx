@@ -5,7 +5,7 @@ import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
 import { can } from "../lib/roles";
 import { MemberPage } from "../design/MemberPage";
-import { initials } from "../design/AppShell";
+import { initials } from "../lib/initials";
 
 export default function Members() {
   return <MemberPage title="Roster">{(viewer) => <MembersContent viewer={viewer} />}</MemberPage>;

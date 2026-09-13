@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { MemberPage } from "../design/MemberPage";
-import { RSVP_BADGE, RSVP_LABEL } from "../design/AppShell";
+import { RSVP_BADGE, RSVP_LABEL } from "../lib/rsvp";
 
 export default function Home() {
   return <MemberPage title="Dashboard">{() => <HomeContentForMember />}</MemberPage>;

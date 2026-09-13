@@ -4,6 +4,7 @@
 // slate/teal, while keeping the same dense, structured layout everywhere.
 import { Link, useLocation } from "react-router-dom";
 import { SignOutButton } from "@clerk/clerk-react";
+import { initials } from "../lib/initials";
 import { ThemeToggle } from "./ThemeToggle";
 
 const NAV_ITEMS = [
@@ -18,15 +19,6 @@ const SETTINGS_ITEM = {
   label: "Settings",
   icon: "M10.325 4.317a1 1 0 011.35 0l.494.44a1 1 0 00.94.23l.63-.17a1 1 0 011.19.55l.3.6a1 1 0 00.74.54l.65.11a1 1 0 01.79 1.15l-.11.65a1 1 0 00.3.86l.47.46a1 1 0 010 1.42l-.47.46a1 1 0 00-.3.86l.11.65a1 1 0 01-.79 1.15l-.65.11a1 1 0 00-.74.54l-.3.6a1 1 0 01-1.19.55l-.63-.17a1 1 0 00-.94.23l-.49.44a1 1 0 01-1.35 0l-.49-.44a1 1 0 00-.94-.23l-.63.17a1 1 0 01-1.19-.55l-.3-.6a1 1 0 00-.74-.54l-.65-.11a1 1 0 01-.79-1.15l.11-.65a1 1 0 00-.3-.86l-.47-.46a1 1 0 010-1.42l.47-.46a1 1 0 00.3-.86l-.11-.65a1 1 0 01.79-1.15l.65-.11a1 1 0 00.74-.54l.3-.6a1 1 0 011.19-.55l.63.17a1 1 0 00.94-.23l.49-.44z",
 };
-
-function initials(name: string) {
-  return name
-    .split(" ")
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
 
 export function AppShell({
   choirName,
@@ -142,19 +134,3 @@ export function AppShell({
     </div>
   );
 }
-
-export const RSVP_BADGE: Record<string, string> = {
-  yes: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400",
-  maybe: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400",
-  no: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400",
-  "no RSVP": "bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-400",
-};
-
-export const RSVP_LABEL: Record<string, string> = {
-  yes: "Going",
-  maybe: "Maybe",
-  no: "Declined",
-  "no RSVP": "No reply",
-};
-
-export { initials };
