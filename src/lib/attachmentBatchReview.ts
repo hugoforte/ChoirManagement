@@ -17,6 +17,8 @@ export interface ReviewFile {
   size: number;
   /** Canonical SHA-256 hex when the upload queue has calculated it. */
   sha256?: string;
+  /** Browser-detected media duration when available. */
+  durationSeconds?: number;
 }
 
 export interface ExistingAttachmentForReview {
@@ -42,19 +44,15 @@ export interface AttachmentBatchReviewInput {
 export type ExactDuplicateDecision = "skip" | "uploadAnyway";
 export type NameCollisionDecision = "newVersion" | "rename" | "skip";
 
-export interface ExactDuplicateMatch {
+export interface ReviewCollisionMatch {
   kind: "existing" | "batch";
   filename: string;
   attachmentId?: string;
   rowId?: string;
 }
 
-export interface NameCollisionMatch {
-  kind: "existing" | "batch";
-  filename: string;
-  attachmentId?: string;
-  rowId?: string;
-}
+export type ExactDuplicateMatch = ReviewCollisionMatch;
+export type NameCollisionMatch = ReviewCollisionMatch;
 
 export type ReviewValidationCode =
   | "invalidFile"
@@ -82,6 +80,7 @@ export interface AttachmentReviewRow {
   originalFilename: string;
   size: number;
   sha256?: string;
+  durationSeconds?: number;
   included: boolean;
   format: InferredValue<AttachmentFormat> | null;
   purpose: InferredValue<AttachmentPurpose> | null;
@@ -125,6 +124,12 @@ function normalizedSha256(value: string | undefined): string | null {
   if (!value) return null;
   const normalized = value.trim().toLowerCase();
   return /^[0-9a-f]{64}$/u.test(normalized) ? normalized : null;
+}
+
+function normalizedDuration(value: number | undefined): number | undefined {
+  return value !== undefined && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
 }
 
 function isPrimaryEligible(
@@ -175,6 +180,7 @@ function makeRow(
       originalFilename: file.name,
       size: file.size,
       sha256: normalizedSha256(file.sha256) ?? undefined,
+      durationSeconds: normalizedDuration(file.durationSeconds),
       included: true,
       format: null,
       purpose: null,
@@ -198,6 +204,7 @@ function makeRow(
     originalFilename: file.name,
     size: file.size,
     sha256: normalizedSha256(file.sha256) ?? undefined,
+    durationSeconds: normalizedDuration(file.durationSeconds),
     included: true,
     format: suggestion.format,
     purpose: suggestion.purpose,
@@ -364,7 +371,9 @@ function validateRow(
   return issues;
 }
 
-function refresh(state: AttachmentBatchReviewState): AttachmentBatchReviewState {
+function recomputeDerivedReviewState(
+  state: AttachmentBatchReviewState,
+): AttachmentBatchReviewState {
   let rows = state.rows.map((row) => withGeneratedFilename(row, state.piece, state.voiceParts));
   let primaryAvailable = !state.piece.hasPrimaryScore;
   rows = rows.map((row) => {
@@ -413,7 +422,7 @@ export function createAttachmentBatchReview(input: AttachmentBatchReviewInput): 
     ids.add(file.id);
     return makeRow(file, input.piece, input.voiceParts);
   });
-  return refresh(
+  return recomputeDerivedReviewState(
     suggestFirstPrimary({
       piece: { ...input.piece },
       voiceParts: input.voiceParts.map((part) => ({ ...part })),
@@ -434,7 +443,9 @@ export function addFilesToAttachmentBatchReview(
     ids.add(file.id);
     return makeRow(file, state.piece, state.voiceParts);
   });
-  return refresh(suggestFirstPrimary({ ...state, rows: [...state.rows, ...newRows] }));
+  return recomputeDerivedReviewState(
+    suggestFirstPrimary({ ...state, rows: [...state.rows, ...newRows] }),
+  );
 }
 
 function updateRow(
@@ -442,7 +453,7 @@ function updateRow(
   rowId: string,
   update: (row: AttachmentReviewRow) => AttachmentReviewRow,
 ): AttachmentBatchReviewState {
-  return refresh({
+  return recomputeDerivedReviewState({
     ...state,
     rows: state.rows.map((row) => (row.id === rowId ? update(row) : row)),
   });
@@ -499,6 +510,17 @@ export function setReviewRowFilename(
   }));
 }
 
+export function setReviewRowDuration(
+  state: AttachmentBatchReviewState,
+  rowId: string,
+  durationSeconds: number | undefined,
+): AttachmentBatchReviewState {
+  return updateRow(state, rowId, (row) => ({
+    ...row,
+    durationSeconds: normalizedDuration(durationSeconds),
+  }));
+}
+
 export function resetReviewRowFilename(
   state: AttachmentBatchReviewState,
   rowId: string,
@@ -524,7 +546,7 @@ export function setReviewRowPrimary(
       primaryMarker: null,
     }));
   }
-  return refresh({
+  return recomputeDerivedReviewState({
     ...state,
     rows: state.rows.map((row) =>
       row.id === rowId
@@ -568,7 +590,10 @@ export function setAttachmentBatchReviewCredits(
   state: AttachmentBatchReviewState,
   changes: Partial<Pick<PieceCreditsForReview, "title" | "arranger" | "composer">>,
 ): AttachmentBatchReviewState {
-  return refresh({ ...state, piece: { ...state.piece, ...changes } });
+  return recomputeDerivedReviewState({
+    ...state,
+    piece: { ...state.piece, ...changes },
+  });
 }
 
 export function bulkSetReviewRowPurpose(
@@ -577,7 +602,7 @@ export function bulkSetReviewRowPurpose(
   purpose: AttachmentPurpose,
 ): AttachmentBatchReviewState {
   const selected = new Set(rowIds);
-  return refresh({
+  return recomputeDerivedReviewState({
     ...state,
     rows: state.rows.map((row) => (selected.has(row.id) ? { ...row, purpose: provided(purpose) } : row)),
   });
@@ -589,7 +614,7 @@ export function bulkSetReviewRowVoiceParts(
   voicePartIds: readonly string[],
 ): AttachmentBatchReviewState {
   const selected = new Set(rowIds);
-  return refresh({
+  return recomputeDerivedReviewState({
     ...state,
     rows: state.rows.map((row) =>
       selected.has(row.id) ? { ...row, voiceParts: provided([...voicePartIds]) } : row,

@@ -10,6 +10,7 @@ import {
   setAttachmentBatchReviewCredits,
   setReviewRowExactDuplicateDecision,
   setReviewRowFilename,
+  setReviewRowDuration,
   setReviewRowIncluded,
   setReviewRowNameCollisionDecision,
   setReviewRowPrimary,
@@ -87,6 +88,26 @@ describe("attachment batch review creation", () => {
 });
 
 describe("review edits and validation", () => {
+  it("preserves an optional detected duration and allows correction", () => {
+    let state = createAttachmentBatchReview(
+      input({
+        files: [
+          {
+            id: "audio",
+            name: "Hallelujah tenor.mp3",
+            size: 200,
+            durationSeconds: 42.5,
+          },
+        ],
+      }),
+    );
+    expect(row(state, "audio").durationSeconds).toBe(42.5);
+    state = setReviewRowDuration(state, "audio", 43);
+    expect(row(state, "audio").durationSeconds).toBe(43);
+    state = setReviewRowDuration(state, "audio", 0);
+    expect(row(state, "audio").durationSeconds).toBeUndefined();
+  });
+
   it("clears an inferred primary as soon as its purpose becomes ineligible", () => {
     let state = createAttachmentBatchReview(input());
     state = setReviewRowPurpose(state, "pdf", "partScore");

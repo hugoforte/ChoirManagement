@@ -12,6 +12,7 @@ import {
   createAttachmentBatchReview,
   setAttachmentBatchReviewCredits,
   setReviewRowExactDuplicateDecision,
+  setReviewRowDuration,
   setReviewRowFilename,
   setReviewRowFormat,
   setReviewRowIncluded,
@@ -89,6 +90,8 @@ export interface AttachmentBatchReviewProps {
   title: string;
   composer?: string;
   arranger?: string;
+  initialFiles?: readonly File[];
+  onInitialFilesAccepted?: () => void;
 }
 
 function marker(value: InferredValue<unknown> | null): React.ReactNode {
@@ -126,6 +129,33 @@ function reviewVoiceParts(parts: readonly ActiveVoicePart[]): VoicePart[] {
 
 function extensionOf(filename: string): string {
   return /\.([^.]+)$/u.exec(filename.trim())?.[1] ?? "";
+}
+
+async function detectAudioDuration(file: File): Promise<number | undefined> {
+  if (!file.type.startsWith("audio/")) return undefined;
+  const url = URL.createObjectURL(file);
+  try {
+    return await new Promise<number | undefined>((resolve) => {
+      const audio = document.createElement("audio");
+      const finish = (duration?: number) => {
+        audio.removeAttribute("src");
+        audio.load();
+        resolve(
+          duration !== undefined && Number.isFinite(duration) && duration > 0
+            ? duration
+            : undefined,
+        );
+      };
+      audio.preload = "metadata";
+      audio.addEventListener("loadedmetadata", () => finish(audio.duration), {
+        once: true,
+      });
+      audio.addEventListener("error", () => finish(), { once: true });
+      audio.src = url;
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 interface ReviewRowEditorProps {
@@ -258,6 +288,31 @@ function ReviewRowEditor({
             />
           </label>
 
+          {(row.format?.value === "audio" || row.format?.value === "midi") && (
+            <label className="text-sm font-medium text-stone-700 dark:text-stone-300">
+              Duration in seconds <span className="font-normal text-stone-500">optional</span>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                aria-label={`Duration for ${row.originalFilename}`}
+                className={`${inputClass} mt-1`}
+                value={row.durationSeconds ?? ""}
+                onChange={(event) =>
+                  onChange(
+                    setReviewRowDuration(
+                      state,
+                      row.id,
+                      event.target.value === ""
+                        ? undefined
+                        : Number(event.target.value),
+                    ),
+                  )
+                }
+              />
+            </label>
+          )}
+
           <label className="text-sm md:col-span-2">
             <input
               type="checkbox"
@@ -320,11 +375,6 @@ function ReviewRowEditor({
                   <option value="skip">Skip</option>
                 </select>
               </label>
-              {row.nameCollisionDecision === "newVersion" && (
-                <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
-                  Uploading a new version is not available in the backend yet. Choose rename or skip to finish this batch.
-                </p>
-              )}
             </div>
           )}
 
@@ -344,6 +394,8 @@ export function AttachmentBatchReview({
   title,
   composer,
   arranger,
+  initialFiles = [],
+  onInitialFilesAccepted,
 }: AttachmentBatchReviewProps) {
   const activeVoiceParts = useQuery(api.voiceParts.listActive);
   const detail = useQuery(api.pieceAttachments.getManagementDetail, { pieceId });
@@ -361,6 +413,8 @@ export function AttachmentBatchReview({
     },
   });
   const inputRef = useRef<HTMLInputElement>(null);
+  const detectedDurations = useRef(new Map<string, number>());
+  const acceptedInitialFiles = useRef(false);
   const [review, setReview] = useState<AttachmentBatchReviewState | null>(null);
   const [selectedForBulk, setSelectedForBulk] = useState<string[]>([]);
   const [bulkPurpose, setBulkPurpose] = useState<AttachmentPurpose>("other");
@@ -430,6 +484,7 @@ export function AttachmentBatchReview({
               name: upload.file.name,
               size: upload.file.size,
               sha256: upload.uploaded.sha256,
+              durationSeconds: detectedDurations.current.get(upload.id),
             }]
           : [],
       );
@@ -442,8 +497,34 @@ export function AttachmentBatchReview({
   function addFiles(files: readonly File[]) {
     if (files.length === 0) return;
     setCleanupError(null);
-    uploads.addFiles(files);
+    const ids = uploads.addFiles(files);
+    for (const [index, id] of ids.entries()) {
+      const file = files[index];
+      if (!file) continue;
+      void detectAudioDuration(file).then((durationSeconds) => {
+        if (durationSeconds === undefined) return;
+        detectedDurations.current.set(id, durationSeconds);
+        setReview((current) =>
+          current
+            ? setReviewRowDuration(current, id, durationSeconds)
+            : current,
+        );
+      });
+    }
   }
+
+  useEffect(() => {
+    if (
+      acceptedInitialFiles.current ||
+      !review ||
+      initialFiles.length === 0
+    ) {
+      return;
+    }
+    acceptedInitialFiles.current = true;
+    addFiles(initialFiles);
+    onInitialFilesAccepted?.();
+  }, [initialFiles, onInitialFilesAccepted, review]);
 
   async function cancelOne(upload: TrackedUpload) {
     setReview((current) =>
@@ -453,7 +534,8 @@ export function AttachmentBatchReview({
   }
 
   async function cancelBatch() {
-    await uploads.cancelAll();
+    const cleaned = await uploads.cancelAll();
+    if (!cleaned) return;
     uploads.clearCompleted();
     setSelectedForBulk([]);
     setReview(emptyReviewState());
@@ -486,6 +568,16 @@ export function AttachmentBatchReview({
           voicePartIds: row.voiceParts.value as Id<"voiceParts">[],
           ...(row.filenameManuallyOverridden
             ? { filenameOverride: row.filename.value }
+            : {}),
+          ...(row.durationSeconds !== undefined
+            ? { durationSeconds: row.durationSeconds }
+            : {}),
+          ...(row.nameCollisionDecision === "newVersion" &&
+          row.newVersionAttachmentId
+            ? {
+                replaceAttachmentId:
+                  row.newVersionAttachmentId as Id<"pieceAttachments">,
+              }
             : {}),
           isPrimary: row.isPrimary,
         };
@@ -523,15 +615,11 @@ export function AttachmentBatchReview({
   const unresolvedUploads = uploads.files.some(
     (upload) => upload.status === "queued" || upload.status === "uploading" || upload.status === "failed",
   );
-  const wantsUnavailableNewVersion = includedRows.some(
-    (row) => row.nameCollisionDecision === "newVersion",
-  );
   const canFinish = Boolean(
     review &&
     canPublishAttachmentBatchReview(review) &&
     uploadsReady &&
     !unresolvedUploads &&
-    !wantsUnavailableNewVersion &&
     !publishing,
   );
 
@@ -694,11 +782,6 @@ export function AttachmentBatchReview({
         </div>
       )}
 
-      {wantsUnavailableNewVersion && (
-        <p className="text-sm text-amber-800 dark:text-amber-300">
-          Finish is disabled because backend version replacement is not available yet.
-        </p>
-      )}
       <div className="flex gap-2">
         <button type="button" className={primaryButtonClass} disabled={!canFinish} onClick={() => void finish()}>
           {publishing ? "Finishing…" : "Finish"}

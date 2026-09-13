@@ -33,9 +33,11 @@ const attachmentFields = {
 const reviewedAttachmentValidator = v.object({
   storageId: v.id("_storage"),
   originalFilename: v.string(),
+  replaceAttachmentId: v.optional(v.id("pieceAttachments")),
   ...attachmentFields,
   revisionNote: v.optional(v.string()),
   revisionLabel: v.optional(v.string()),
+  durationSeconds: v.optional(v.number()),
 });
 
 const currentAttachmentValidator = v.object({
@@ -244,8 +246,15 @@ export const publishBatch = mutation({
     if (storageIds.size !== attachments.length) {
       throw new Error("A storage file can appear only once in a publish batch");
     }
+    const replacementIds = attachments.flatMap((attachment) =>
+      attachment.replaceAttachmentId ? [attachment.replaceAttachmentId] : [],
+    );
+    if (new Set(replacementIds).size !== replacementIds.length) {
+      throw new Error("A batch can replace an attachment only once");
+    }
     const batchPrimaryCount = attachments.filter(
-      (attachment) => attachment.isPrimary,
+      (attachment) =>
+        !attachment.replaceAttachmentId && attachment.isPrimary,
     ).length;
     if (batchPrimaryCount > 1)
       throw new Error("A batch can contain only one primary score");
@@ -257,8 +266,11 @@ export const publishBatch = mutation({
         q.eq("pieceId", pieceId).eq("status", "active"),
       )
       .take(MAX_ATTACHMENTS_PER_PIECE);
+    const newAttachmentCount = attachments.filter(
+      (attachment) => !attachment.replaceAttachmentId,
+    ).length;
     if (
-      existingAttachments.length + attachments.length >
+      existingAttachments.length + newAttachmentCount >
       MAX_ATTACHMENTS_PER_PIECE
     ) {
       throw new Error(
@@ -269,15 +281,49 @@ export const publishBatch = mutation({
     const reviewed = await Promise.all(
       attachments.map(async (attachment) => {
         requireNonEmptyFilename(attachment.originalFilename);
-        requirePurposeAllowedForFormat(attachment.format, attachment.purpose);
-        if (attachment.isPrimary) {
-          requirePrimaryScoreEligible(attachment.format, attachment.purpose);
+        if (
+          attachment.durationSeconds !== undefined &&
+          (!Number.isFinite(attachment.durationSeconds) ||
+            attachment.durationSeconds <= 0)
+        ) {
+          throw new Error("Audio duration must be a positive number");
         }
-        await validateVoiceParts(
-          ctx,
-          attachment.purpose,
-          attachment.voicePartIds,
-        );
+        let replacedAttachment: Doc<"pieceAttachments"> | null = null;
+        let replacedVersion: Doc<"pieceFileVersions"> | null = null;
+        if (attachment.replaceAttachmentId) {
+          replacedAttachment = await ctx.db.get(
+            "pieceAttachments",
+            attachment.replaceAttachmentId,
+          );
+          if (
+            !replacedAttachment ||
+            replacedAttachment.pieceId !== pieceId ||
+            replacedAttachment.status !== "active"
+          ) {
+            throw new Error("Replacement attachment not found for this Piece");
+          }
+          if (!replacedAttachment.currentVersionId) {
+            throw new Error("Replacement attachment has no current revision");
+          }
+          replacedVersion = await ctx.db.get(
+            "pieceFileVersions",
+            replacedAttachment.currentVersionId,
+          );
+          requireCurrentRevisionBelongsToAttachment(
+            replacedAttachment._id,
+            replacedVersion,
+          );
+        } else {
+          requirePurposeAllowedForFormat(attachment.format, attachment.purpose);
+          if (attachment.isPrimary) {
+            requirePrimaryScoreEligible(attachment.format, attachment.purpose);
+          }
+          await validateVoiceParts(
+            ctx,
+            attachment.purpose,
+            attachment.voicePartIds,
+          );
+        }
         await requireStorageHasNoVersion(ctx, attachment.storageId);
         const pendingUpload = await ctx.db
           .query("pendingPieceUploads")
@@ -296,13 +342,48 @@ export const publishBatch = mutation({
           attachment,
           metadata: await getStorageMetadata(ctx, attachment.storageId),
           pendingUploadId: pendingUpload?._id,
+          replacedAttachment,
+          replacedVersion,
         };
       }),
     );
 
     const now = Date.now();
     const createdIds: Id<"pieceAttachments">[] = [];
-    for (const { attachment, metadata, pendingUploadId } of reviewed) {
+    let insertedAttachmentCount = 0;
+    for (const {
+      attachment,
+      metadata,
+      pendingUploadId,
+      replacedAttachment,
+      replacedVersion,
+    } of reviewed) {
+      if (replacedAttachment && replacedVersion) {
+        const versionId = await ctx.db.insert("pieceFileVersions", {
+          attachmentId: replacedAttachment._id,
+          storageId: attachment.storageId,
+          revisionNumber: replacedVersion.revisionNumber + 1,
+          originalFilename: attachment.originalFilename,
+          contentType: metadata.contentType,
+          size: metadata.size,
+          sha256: metadata.sha256,
+          durationSeconds: attachment.durationSeconds,
+          uploadedAt: now,
+          uploadedByMemberId: actor._id,
+          revisionNote: attachment.revisionNote,
+          revisionLabel: attachment.revisionLabel,
+        });
+        await ctx.db.patch("pieceAttachments", replacedAttachment._id, {
+          currentVersionId: versionId,
+          updatedAt: now,
+          updatedByMemberId: actor._id,
+        });
+        if (pendingUploadId) {
+          await ctx.db.delete("pendingPieceUploads", pendingUploadId);
+        }
+        createdIds.push(replacedAttachment._id);
+        continue;
+      }
       const attachmentId = await ctx.db.insert("pieceAttachments", {
         pieceId,
         format: attachment.format,
@@ -310,7 +391,7 @@ export const publishBatch = mutation({
         voicePartIds: attachment.voicePartIds,
         label: attachment.label,
         filenameOverride: attachment.filenameOverride,
-        displayOrder: existingAttachments.length + createdIds.length,
+        displayOrder: existingAttachments.length + insertedAttachmentCount,
         isPrimary: attachment.isPrimary,
         status: "active",
         updatedAt: now,
@@ -325,6 +406,7 @@ export const publishBatch = mutation({
         contentType: metadata.contentType,
         size: metadata.size,
         sha256: metadata.sha256,
+        durationSeconds: attachment.durationSeconds,
         uploadedAt: now,
         uploadedByMemberId: actor._id,
         revisionNote: attachment.revisionNote,
@@ -337,6 +419,7 @@ export const publishBatch = mutation({
         await ctx.db.delete("pendingPieceUploads", pendingUploadId);
       }
       createdIds.push(attachmentId);
+      insertedAttachmentCount += 1;
     }
     return createdIds;
   },

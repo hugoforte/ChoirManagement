@@ -24,11 +24,7 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
   const title = `Attachment Batch ${Date.now()}`;
   await page.goto("/library/manage");
   await page.getByPlaceholder("New Piece title").fill(title);
-  await page.getByRole("button", { name: "Add" }).click();
-  await page.getByRole("button", { name: title }).click();
-  await expect(page.getByRole("heading", { name: "Add attachments" })).toBeVisible();
-
-  await page.getByLabel("Choose attachment files").setInputFiles([
+  await page.getByLabel("Files for new Piece").setInputFiles([
     {
       name: `${title} score.pdf`,
       mimeType: "application/pdf",
@@ -45,6 +41,8 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
       buffer: Buffer.from("test rehearsal audio"),
     },
   ]);
+  await page.getByRole("button", { name: "Add" }).click();
+  await expect(page.getByRole("heading", { name: "Add attachments" })).toBeVisible();
 
   const scoreRow = page.getByTestId("review-row-upload-1");
   const sourceRow = page.getByTestId("review-row-upload-2");

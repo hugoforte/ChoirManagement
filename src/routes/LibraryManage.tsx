@@ -24,27 +24,55 @@ function LibraryManageContent() {
   const pieces = useQuery(api.pieces.list);
   const { run: createPiece, pending: creating, error: createError } = useTrackedMutation(api.pieces.create);
   const [newTitle, setNewTitle] = useState("");
+  const [newFiles, setNewFiles] = useState<File[]>([]);
+  const [initialBatch, setInitialBatch] = useState<{
+    pieceId: string;
+    files: File[];
+  } | null>(null);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!newTitle.trim()) return;
     const id = await createPiece({ title: newTitle.trim() });
-    if (id !== undefined) setNewTitle("");
+    if (id !== undefined) {
+      if (newFiles.length > 0) {
+        setInitialBatch({ pieceId: id, files: newFiles });
+      }
+      setNewTitle("");
+      setNewFiles([]);
+    }
   }
 
   return (
     <>
-      <form onSubmit={handleCreate} className="flex gap-2">
-        <input
-          type="text"
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-          placeholder="New Piece title"
-          className={`${inputClass} flex-1`}
-        />
-        <button type="submit" disabled={creating || !newTitle.trim()} className={primaryButtonClass}>
-          Add
-        </button>
+      <form onSubmit={handleCreate} className="space-y-2">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="New Piece title"
+            className={`${inputClass} flex-1`}
+          />
+          <button type="submit" disabled={creating || !newTitle.trim()} className={primaryButtonClass}>
+            Add
+          </button>
+        </div>
+        <label className="block text-sm text-stone-600 dark:text-stone-300">
+          Files for the new Piece <span className="text-stone-500">optional</span>
+          <input
+            type="file"
+            multiple
+            aria-label="Files for new Piece"
+            className="mt-1 block text-sm"
+            onChange={(event) => setNewFiles([...(event.target.files ?? [])])}
+          />
+        </label>
+        {newFiles.length > 0 && (
+          <p className="text-xs text-stone-500 dark:text-stone-400">
+            {newFiles.length} file{newFiles.length === 1 ? "" : "s"} will open in review after the Piece is created.
+          </p>
+        )}
       </form>
       {createError && <p className="mt-2 text-sm text-danger">{createError}</p>}
 
@@ -53,7 +81,20 @@ function LibraryManageContent() {
       ) : (
         <ul className="mt-6 space-y-3">
           {pieces.map((piece) => (
-            <PieceManageRow key={piece._id} piece={piece} />
+            <PieceManageRow
+              key={piece._id}
+              piece={piece}
+              initialFiles={
+                initialBatch?.pieceId === piece._id
+                  ? initialBatch.files
+                  : undefined
+              }
+              onInitialFilesAccepted={() =>
+                setInitialBatch((current) =>
+                  current?.pieceId === piece._id ? null : current,
+                )
+              }
+            />
           ))}
         </ul>
       )}
@@ -61,8 +102,16 @@ function LibraryManageContent() {
   );
 }
 
-function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
-  const [expanded, setExpanded] = useState(false);
+function PieceManageRow({
+  piece,
+  initialFiles,
+  onInitialFilesAccepted,
+}: {
+  piece: Doc<"pieces">;
+  initialFiles?: readonly File[];
+  onInitialFilesAccepted: () => void;
+}) {
+  const [expanded, setExpanded] = useState(initialFiles !== undefined);
   const { run: updatePiece, pending: saving, error: saveError } = useTrackedMutation(api.pieces.update);
   const { run: removePiece, error: removeError } = useTrackedMutation(api.pieces.remove);
   const { run: detachFile, error: detachError } = useTrackedMutation(api.pieces.detachFile);
@@ -175,6 +224,8 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
             title={fields.title}
             composer={fields.composer}
             arranger={fields.arranger}
+            initialFiles={initialFiles}
+            onInitialFilesAccepted={onInitialFilesAccepted}
           />
         </div>
       )}

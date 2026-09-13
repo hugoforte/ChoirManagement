@@ -112,6 +112,7 @@ test("a Director publishes a batch atomically and every Member can list it", asy
           purpose: "partRehearsal",
           voicePartIds: [tenorPartId],
           isPrimary: false,
+          durationSeconds: 62.5,
           revisionNote: "Initial review",
         },
       ],
@@ -132,6 +133,7 @@ test("a Director publishes a batch atomically and every Member can list it", asy
     currentVersion: { revisionNumber: 1, originalFilename: "ave-verum.pdf" },
   });
   expect(listed[0].url).not.toBeNull();
+  expect(listed[1].currentVersion.durationSeconds).toBe(62.5);
   const managementDetail = await t
     .withIdentity(directorIdentity)
     .query(api.pieceAttachments.getManagementDetail, { pieceId });
@@ -202,7 +204,7 @@ test("pending uploads register idempotently and are consumed by publication", as
   });
   expect(
     await t.run(async (ctx) =>
-      await ctx.db.query("pendingPieceUploads").collect(),
+      await ctx.db.query("pendingPieceUploads").take(2),
     ),
   ).toHaveLength(1);
 
@@ -219,7 +221,7 @@ test("pending uploads register idempotently and are consumed by publication", as
   });
   expect(
     await t.run(async (ctx) =>
-      await ctx.db.query("pendingPieceUploads").collect(),
+      await ctx.db.query("pendingPieceUploads").take(2),
     ),
   ).toHaveLength(0);
 });
@@ -245,7 +247,7 @@ test("pending upload cleanup is restricted to its uploader", async () => {
   });
   expect(
     await t.run(async (ctx) =>
-      await ctx.db.query("pendingPieceUploads").collect(),
+      await ctx.db.query("pendingPieceUploads").take(2),
     ),
   ).toHaveLength(0);
   expect(await t.run(async (ctx) => await ctx.storage.getUrl(storageId))).toBeNull();
@@ -536,6 +538,63 @@ test("publication refuses a storage object already used by a revision", async ()
       attachments: [{ ...fullScore(storageId), isPrimary: false }],
     }),
   ).rejects.toThrow(/already referenced by a revision/);
+});
+
+test("a filename collision can publish atomically as a new revision", async () => {
+  const { t, pieceId } = await setup();
+  const firstStorageId = await store(t, "first revision");
+  const replacementStorageId = await store(t, "replacement revision");
+  const director = t.withIdentity(directorIdentity);
+  const [attachmentId] = await director.mutation(
+    api.pieceAttachments.publishBatch,
+    {
+      pieceId,
+      attachments: [fullScore(firstStorageId)],
+    },
+  );
+  await director.mutation(api.pieceAttachments.registerPendingUpload, {
+    pieceId,
+    storageId: replacementStorageId,
+  });
+
+  const publishedIds = await director.mutation(
+    api.pieceAttachments.publishBatch,
+    {
+      pieceId,
+      attachments: [
+        {
+          ...fullScore(replacementStorageId),
+          originalFilename: "ave-verum-revised.pdf",
+          replaceAttachmentId: attachmentId,
+        },
+      ],
+    },
+  );
+
+  expect(publishedIds).toEqual([attachmentId]);
+  const detail = await director.query(
+    api.pieceAttachments.getManagementDetail,
+    { pieceId },
+  );
+  expect(detail.attachments).toHaveLength(1);
+  expect(detail.attachments[0].currentVersion).toMatchObject({
+    revisionNumber: 2,
+    originalFilename: "ave-verum-revised.pdf",
+  });
+  const versions = await t.run(async (ctx) =>
+    await ctx.db
+      .query("pieceFileVersions")
+      .withIndex("by_attachment_id_and_revision_number", (q) =>
+        q.eq("attachmentId", attachmentId),
+      )
+      .take(3),
+  );
+  expect(versions.map((version) => version.revisionNumber)).toEqual([1, 2]);
+  expect(
+    await t.run(async (ctx) =>
+      await ctx.db.query("pendingPieceUploads").take(1),
+    ),
+  ).toHaveLength(0);
 });
 
 test("discard refuses referenced storage and deletes an unreferenced upload", async () => {

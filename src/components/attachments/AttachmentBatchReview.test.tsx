@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useMutation, useQuery } from "convex/react";
 import { getFunctionName } from "convex/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -80,23 +80,27 @@ function mockUploadResult(): UseBatchUploadResult {
   };
 }
 
-function renderReview() {
+function renderReview(
+  props: Partial<React.ComponentProps<typeof AttachmentBatchReview>> = {},
+) {
   return render(
     <AttachmentBatchReview
       pieceId={"piece-1" as Id<"pieces">}
       title="Hallelujah"
       arranger="Handel"
+      {...props}
     />,
   );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  addFiles.mockReturnValue(["new-upload"]);
   publish.mockResolvedValue(["attachment-1"]);
   register.mockResolvedValue(null);
   discard.mockResolvedValue(null);
-  cancel.mockResolvedValue(undefined);
-  cancelAll.mockResolvedValue(undefined);
+  cancel.mockResolvedValue(true);
+  cancelAll.mockResolvedValue(true);
   managementDetail = {
     piece: { _id: "piece-1" as Id<"pieces">, title: "Hallelujah" },
     attachments: [],
@@ -117,6 +121,17 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("AttachmentBatchReview", () => {
+  it("starts reviewing files selected while a new Piece is created", async () => {
+    const initialFile = new File(["score"], "new-score.pdf", {
+      type: "application/pdf",
+    });
+    const accepted = vi.fn();
+    renderReview({ initialFiles: [initialFile], onInitialFilesAccepted: accepted });
+
+    await waitFor(() => expect(addFiles).toHaveBeenCalledWith([initialFile]));
+    expect(accepted).toHaveBeenCalledOnce();
+  });
+
   it("reviews inferred metadata, clears an ineligible primary, and publishes a valid row", async () => {
     uploadFiles = [trackedUpload("upload-1", "Hallelujah score.pdf")];
     renderReview();
@@ -227,7 +242,7 @@ describe("AttachmentBatchReview", () => {
     expect(cancel).toHaveBeenCalledWith("failed");
   });
 
-  it("renders new-version collision choice but blocks Finish while replacement is unavailable", async () => {
+  it("publishes a filename collision as a new version of its target", async () => {
     uploadFiles = [trackedUpload("upload-1", "Hallelujah score.pdf")];
     managementDetail.attachments = [
       {
@@ -244,9 +259,12 @@ describe("AttachmentBatchReview", () => {
     const select = await screen.findByLabelText("Filename collision decision for Hallelujah score.pdf");
     fireEvent.change(select, { target: { value: "newVersion" } });
 
-    expect(screen.getByText(/backend version replacement is not available yet/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Finish" })).toBeDisabled();
-    expect(screen.getByText(/Finish is disabled because backend version replacement/i)).toBeInTheDocument();
+    const finish = screen.getByRole("button", { name: "Finish" });
+    expect(finish).toBeEnabled();
+    await act(async () => fireEvent.click(finish));
+    expect(publish.mock.calls[0]?.[0]?.attachments[0]).toMatchObject({
+      replaceAttachmentId: "attachment-old",
+    });
   });
 
   it("cancels and clears the whole unfinished batch", async () => {
@@ -258,6 +276,36 @@ describe("AttachmentBatchReview", () => {
     });
     expect(cancelAll).toHaveBeenCalledOnce();
     expect(clearCompleted).toHaveBeenCalledOnce();
+  });
+
+  it("allows an inferred audio duration to be reviewed before publishing", async () => {
+    uploadFiles = [trackedUpload("upload-1", "Hallelujah tenor.mp3")];
+    renderReview();
+
+    const duration = await screen.findByLabelText(
+      "Duration for Hallelujah tenor.mp3",
+    );
+    fireEvent.change(duration, { target: { value: "42.5" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+    });
+
+    expect(publish.mock.calls[0]?.[0]?.attachments[0]).toMatchObject({
+      durationSeconds: 42.5,
+    });
+  });
+
+  it("retains the batch when cancellation cleanup fails", async () => {
+    uploadFiles = [trackedUpload("upload-1", "Hallelujah score.pdf")];
+    cancelAll.mockResolvedValue(false);
+    renderReview();
+    await screen.findByTestId("review-row-upload-1");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Cancel batch" }));
+    });
+
+    expect(clearCompleted).not.toHaveBeenCalled();
   });
 
   it("registers uploaded storage to the Piece and delegates safe cleanup", async () => {
