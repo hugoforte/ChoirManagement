@@ -1,6 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// chromium-guest is Clerk-free. chromium-director and chromium-admin each
+// chromium-guest and chromium-production-smoke are Clerk-free. The former is
+// the deterministic, seeded preview suite; the latter is a read-only suite
+// for the stable production alias. chromium-director and chromium-admin each
 // sign in once via their own setup project (e2e/auth.setup.ts,
 // e2e/auth-admin.setup.ts) using @clerk/testing's email-based ticket sign-in
 // against a "+clerk_test" Clerk account, then reuse the saved storageState —
@@ -32,6 +34,11 @@ export default defineConfig({
     {
       name: "chromium-guest",
       testMatch: /public-events\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "chromium-production-smoke",
+      testMatch: /production-smoke\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
     {

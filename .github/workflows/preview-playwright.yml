@@ -12,6 +12,9 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # Catch production drift even when no code has recently shipped.
+    - cron: "17 9 * * *"
 
 # One in-flight run per ref is enough; a newer commit supersedes an older one.
 concurrency:
@@ -23,24 +26,24 @@ concurrency:
 # a dev server spun up in CI — same philosophy as that repo's config, where
 # PLAYWRIGHT_BASE_URL also drives local runs (defaults to localhost:5173).
 #
-# Both jobs now target the same place on a PR — that branch's own preview
+# The preview jobs target the same place on a PR — that branch's own preview
 # deployment, backed by its own auto-seeded Convex backend:
-#   - e2e-guest: the unauthenticated project (public Events site, ticket #7).
-#     Also runs on pushes to main, where it targets production instead.
+#   - e2e-guest: the deterministic unauthenticated project (public Events).
 #   - e2e-authenticated: chromium-director, signed in via @clerk/testing's
 #     email-based ticket strategy against a "+clerk_test" account. PR-only,
 #     because production deliberately holds no test Member rows.
+#   - production-smoke: read-only and seed-independent; runs after main
+#     deploys and daily against the stable production alias.
 #
-# They stay two jobs rather than one so a failure says which half broke, and
-# so the guest half still covers production post-merge.
+# The preview jobs stay separate so a failure says which half broke.
 #
-# Both skip gracefully (not fail) if the required Vercel secrets aren't
+# Preview jobs skip gracefully (not fail) if the required Vercel secrets aren't
 # configured — matters for contributor forks and self-hosters who haven't
 # wired up Vercel/E2E at all.
 
 jobs:
   e2e-guest:
-    if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && !github.event.pull_request.head.repo.fork) }}
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && !github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -71,14 +74,14 @@ jobs:
       - name: Resolve deployment URL
         id: deployment
         if: steps.secrets.outputs.available == 'true'
-        run: node scripts/ci/resolve-vercel-deployment-url.mjs --target=${{ (github.ref == 'refs/heads/main' && github.event_name == 'push') && 'production' || 'preview' }}
+        run: node scripts/ci/resolve-vercel-deployment-url.mjs --target=preview
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
           # On pull_request, github.sha is a synthetic merge commit Vercel
           # never builds — use the PR head SHA so the poll can actually match.
-          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          TARGET_SHA: ${{ github.event.pull_request.head.sha }}
 
       - name: Install Playwright browser
         if: steps.secrets.outputs.available == 'true'
@@ -91,11 +94,55 @@ jobs:
           PLAYWRIGHT_BASE_URL: ${{ steps.deployment.outputs.deployment_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
 
+  production-smoke:
+    if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # On a main push, wait for the matching production deployment before
+      # checking the stable alias. Scheduled runs inspect the live alias
+      # directly and need no Vercel credentials.
+      - name: Check Vercel secrets
+        if: github.event_name == 'push'
+        id: production-secrets
+        run: |
+          if [[ -n "${{ secrets.VERCEL_TOKEN }}" && -n "${{ secrets.VERCEL_PROJECT_ID }}" && -n "${{ secrets.VERCEL_TEAM_ID }}" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Production smoke skipped::Missing Vercel credentials needed to wait for the main deployment."
+          fi
+
+      - name: Wait for production deployment
+        if: github.event_name == 'push' && steps.production-secrets.outputs.available == 'true'
+        run: node scripts/ci/resolve-vercel-deployment-url.mjs --target=production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          TARGET_SHA: ${{ github.sha }}
+
+      - name: Install Playwright browser
+        if: github.event_name == 'schedule' || steps.production-secrets.outputs.available == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run read-only smoke tests against stable production
+        if: github.event_name == 'schedule' || steps.production-secrets.outputs.available == 'true'
+        run: npx playwright test --project=chromium-production-smoke
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://ahava-choir-management.vercel.app' }}
+          PRODUCTION_PUBLIC_EVENT_ID: ${{ vars.PRODUCTION_PUBLIC_EVENT_ID }}
+
   # Runs on PRs, against the branch's OWN preview deployment — not against
-  # production. Two reasons: authenticated coverage is far more useful before
-  # a merge than after, and production deliberately holds no test Member rows
-  # any more (the accounts have trivial passwords and production is publicly
-  # reachable, so they exist only on throwaway preview backends).
+  # production. Authenticated coverage is most useful before a merge, and
+  # production deliberately holds no test Member rows.
   e2e-authenticated:
     if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && !github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-latest
