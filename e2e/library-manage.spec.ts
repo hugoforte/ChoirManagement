@@ -43,7 +43,10 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
     {
       name: `${title} cover.png`,
       mimeType: "image/png",
-      buffer: Buffer.from("test image"),
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
     },
   ]);
   await page.getByRole("button", { name: "Add" }).click();
