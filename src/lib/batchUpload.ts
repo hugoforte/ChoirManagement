@@ -97,7 +97,21 @@ export function createAbortError(): DOMException {
 
 /** Calculate the browser's canonical lowercase SHA-256 hex digest. */
 export async function calculateSha256(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  const bytes =
+    typeof file.arrayBuffer === "function"
+      ? await file.arrayBuffer()
+      : await new Promise<ArrayBuffer>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.addEventListener("load", () => {
+            if (reader.result instanceof ArrayBuffer) resolve(reader.result);
+            else reject(new Error("Could not read file bytes for hashing"));
+          });
+          reader.addEventListener("error", () =>
+            reject(reader.error ?? new Error("Could not read file bytes for hashing")),
+          );
+          reader.readAsArrayBuffer(file);
+        });
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
