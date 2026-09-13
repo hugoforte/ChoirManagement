@@ -25,16 +25,17 @@ test("director can create an Event, RSVP to it, and see the RSVP reflected on th
   await page.goto("/events");
   await page.getByRole("link", { name: title }).click();
   await page.waitForURL(/\/events\/[^/]+$/);
-  const yesButton = page.getByRole("button", { name: "yes", exact: true });
-  await yesButton.click();
+  // "Going", not the raw "yes" status — src/lib/rsvp.ts is the one place
+  // naming RSVP labels now (see #31), so both this button and the Events
+  // list row below read the same vocabulary instead of two different ones.
+  const goingButton = page.getByRole("button", { name: "Going", exact: true });
+  await goingButton.click();
   // Wait for the RSVP mutation to actually land before navigating away —
   // otherwise the next page's data can be read before it's written.
-  await expect(yesButton).toHaveAttribute("aria-pressed", "true");
+  await expect(goingButton).toHaveAttribute("aria-pressed", "true");
 
   await page.goto("/events");
-  // Events.tsx renders this as a <table> row (role="row"), not a <li>, and
-  // shows a friendlier RSVP_LABEL ("Going") rather than the raw "yes"
-  // status value.
+  // Events.tsx renders this as a <table> row (role="row"), not a <li>.
   const row = page.getByRole("row").filter({ hasText: title });
   await expect(row).toContainText("Going");
 });
