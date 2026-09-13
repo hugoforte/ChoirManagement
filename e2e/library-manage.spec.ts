@@ -94,7 +94,7 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
   ).toBeVisible();
   await expect(page.locator("iframe[title^='Preview of']")).toBeVisible();
   await expect(page.locator("audio")).toBeVisible();
-  await expect(page.getByRole("img", { name: /Preview of .*cover/i })).toBeVisible();
+  await expect(page.locator("img[alt^='Preview of']")).toBeVisible();
 
   await page.getByRole("button", { name: "Tenor" }).click();
   await expect(
