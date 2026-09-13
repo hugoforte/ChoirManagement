@@ -155,6 +155,14 @@ test("management detail and all management mutations refuse a Chorister", async 
   await expect(
     t
       .withIdentity(choristerIdentity)
+      .mutation(api.pieceAttachments.registerPendingUpload, {
+        pieceId,
+        storageId,
+      }),
+  ).rejects.toThrow(/Requires capability: manageLibrary/);
+  await expect(
+    t
+      .withIdentity(choristerIdentity)
       .query(api.pieceAttachments.getManagementDetail, { pieceId }),
   ).rejects.toThrow(/Requires capability: manageLibrary/);
   await expect(
@@ -177,6 +185,70 @@ test("management detail and all management mutations refuse a Chorister", async 
         storageIds: [storageId],
       }),
   ).rejects.toThrow(/Requires capability: manageLibrary/);
+});
+
+test("pending uploads register idempotently and are consumed by publication", async () => {
+  const { t, pieceId, otherPieceId } = await setup();
+  const storageId = await store(t);
+  const director = t.withIdentity(directorIdentity);
+
+  await director.mutation(api.pieceAttachments.registerPendingUpload, {
+    pieceId,
+    storageId,
+  });
+  await director.mutation(api.pieceAttachments.registerPendingUpload, {
+    pieceId,
+    storageId,
+  });
+  expect(
+    await t.run(async (ctx) =>
+      await ctx.db.query("pendingPieceUploads").collect(),
+    ),
+  ).toHaveLength(1);
+
+  await expect(
+    director.mutation(api.pieceAttachments.registerPendingUpload, {
+      pieceId: otherPieceId,
+      storageId,
+    }),
+  ).rejects.toThrow(/another batch/);
+
+  await director.mutation(api.pieceAttachments.publishBatch, {
+    pieceId,
+    attachments: [fullScore(storageId)],
+  });
+  expect(
+    await t.run(async (ctx) =>
+      await ctx.db.query("pendingPieceUploads").collect(),
+    ),
+  ).toHaveLength(0);
+});
+
+test("pending upload cleanup is restricted to its uploader", async () => {
+  const { t, pieceId } = await setup();
+  const storageId = await store(t, "pending");
+  const director = t.withIdentity(directorIdentity);
+  const admin = t.withIdentity(adminIdentity);
+
+  await director.mutation(api.pieceAttachments.registerPendingUpload, {
+    pieceId,
+    storageId,
+  });
+  await expect(
+    admin.mutation(api.pieceAttachments.discardUnreferencedStorage, {
+      storageIds: [storageId],
+    }),
+  ).rejects.toThrow(/another Member's pending upload/);
+
+  await director.mutation(api.pieceAttachments.discardUnreferencedStorage, {
+    storageIds: [storageId],
+  });
+  expect(
+    await t.run(async (ctx) =>
+      await ctx.db.query("pendingPieceUploads").collect(),
+    ),
+  ).toHaveLength(0);
+  expect(await t.run(async (ctx) => await ctx.storage.getUrl(storageId))).toBeNull();
 });
 
 test("publication rejects bad storage and policy violations without metadata writes", async () => {

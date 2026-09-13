@@ -185,6 +185,42 @@ export const getManagementDetail = query({
   },
 });
 
+export const registerPendingUpload = mutation({
+  args: {
+    pieceId: v.id("pieces"),
+    storageId: v.id("_storage"),
+  },
+  returns: v.null(),
+  handler: async (ctx, { pieceId, storageId }) => {
+    const actor = await requireCan(ctx, "manageLibrary");
+    await requirePieceAccess(ctx, pieceId);
+    await getStorageMetadata(ctx, storageId);
+    await requireStorageHasNoVersion(ctx, storageId);
+
+    const existing = await ctx.db
+      .query("pendingPieceUploads")
+      .withIndex("by_storage_id", (q) => q.eq("storageId", storageId))
+      .unique();
+    if (existing) {
+      if (
+        existing.pieceId !== pieceId ||
+        existing.uploadedByMemberId !== actor._id
+      ) {
+        throw new Error("Uploaded file is already registered to another batch");
+      }
+      return null;
+    }
+
+    await ctx.db.insert("pendingPieceUploads", {
+      pieceId,
+      storageId,
+      uploadedByMemberId: actor._id,
+      createdAt: Date.now(),
+    });
+    return null;
+  },
+});
+
 export const publishBatch = mutation({
   args: {
     pieceId: v.id("pieces"),
@@ -243,16 +279,30 @@ export const publishBatch = mutation({
           attachment.voicePartIds,
         );
         await requireStorageHasNoVersion(ctx, attachment.storageId);
+        const pendingUpload = await ctx.db
+          .query("pendingPieceUploads")
+          .withIndex("by_storage_id", (q) =>
+            q.eq("storageId", attachment.storageId),
+          )
+          .unique();
+        if (
+          pendingUpload &&
+          (pendingUpload.pieceId !== pieceId ||
+            pendingUpload.uploadedByMemberId !== actor._id)
+        ) {
+          throw new Error("Uploaded file is registered to another batch");
+        }
         return {
           attachment,
           metadata: await getStorageMetadata(ctx, attachment.storageId),
+          pendingUploadId: pendingUpload?._id,
         };
       }),
     );
 
     const now = Date.now();
     const createdIds: Id<"pieceAttachments">[] = [];
-    for (const { attachment, metadata } of reviewed) {
+    for (const { attachment, metadata, pendingUploadId } of reviewed) {
       const attachmentId = await ctx.db.insert("pieceAttachments", {
         pieceId,
         format: attachment.format,
@@ -283,6 +333,9 @@ export const publishBatch = mutation({
       await ctx.db.patch("pieceAttachments", attachmentId, {
         currentVersionId: versionId,
       });
+      if (pendingUploadId) {
+        await ctx.db.delete("pendingPieceUploads", pendingUploadId);
+      }
       createdIds.push(attachmentId);
     }
     return createdIds;
@@ -387,7 +440,7 @@ export const discardUnreferencedStorage = mutation({
   args: { storageIds: v.array(v.id("_storage")) },
   returns: v.null(),
   handler: async (ctx, { storageIds }) => {
-    await requireCan(ctx, "manageLibrary");
+    const actor = await requireCan(ctx, "manageLibrary");
     if (storageIds.length > MAX_STORAGE_IDS_TO_DISCARD) {
       throw new Error(
         `At most ${MAX_STORAGE_IDS_TO_DISCARD} storage files can be discarded at once`,
@@ -404,6 +457,14 @@ export const discardUnreferencedStorage = mutation({
           .take(1);
         return versions.length > 0;
       }),
+    );
+    const pendingUploads = await Promise.all(
+      storageIds.map(async (storageId) =>
+        await ctx.db
+          .query("pendingPieceUploads")
+          .withIndex("by_storage_id", (q) => q.eq("storageId", storageId))
+          .unique(),
+      ),
     );
     const choirSettings = await ctx.db.query("choirSettings").take(2);
     if (choirSettings.length > 1) {
@@ -432,7 +493,21 @@ export const discardUnreferencedStorage = mutation({
       ) {
         throw new Error("Storage file is referenced outside Piece attachments");
       }
+      const pendingUpload = pendingUploads[index];
+      if (
+        pendingUpload &&
+        pendingUpload.uploadedByMemberId !== actor._id
+      ) {
+        throw new Error("Cannot discard another Member's pending upload");
+      }
     }
+    await Promise.all(
+      pendingUploads.map(async (pendingUpload) => {
+        if (pendingUpload) {
+          await ctx.db.delete("pendingPieceUploads", pendingUpload._id);
+        }
+      }),
+    );
     await Promise.all(
       storageIds.map((storageId) => ctx.storage.delete(storageId)),
     );
