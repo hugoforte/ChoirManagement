@@ -1,8 +1,9 @@
 import { v } from "convex/values";
 
-import { internalMutation } from "./_generated/server";
+import { internalMutation, MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { DEFAULT_VOICE_PARTS } from "./lib/pieceAttachmentPolicy";
 
 // Seeding for non-production deployments (the `staging` deployment behind
 // Vercel Preview builds today; a per-branch preview deployment later). Two
@@ -50,11 +51,39 @@ function requireSeedableDeployment() {
   }
 }
 
+async function ensureDefaultVoicePartsInContext(ctx: MutationCtx) {
+  for (const part of DEFAULT_VOICE_PARTS) {
+    const existing = await ctx.db
+      .query("voiceParts")
+      .withIndex("by_default_key", (q) => q.eq("defaultKey", part.defaultKey))
+      .unique();
+    if (existing) continue;
+
+    await ctx.db.insert("voiceParts", {
+      ...part,
+      status: "active",
+      updatedAt: Date.now(),
+    });
+  }
+}
+
+// Safe for preview setup and an eventual production bootstrap/migration:
+// inserts only missing built-in parts and never resets choir customization.
+export const ensureDefaultVoiceParts = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    await ensureDefaultVoicePartsInContext(ctx);
+    return null;
+  },
+});
+
 export const demo = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
     requireSeedableDeployment();
+    await ensureDefaultVoicePartsInContext(ctx);
 
     const existingPieces = await ctx.db.query("pieces").take(1);
     if (existingPieces.length > 0) {

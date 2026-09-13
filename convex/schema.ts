@@ -4,6 +4,13 @@
 
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import {
+  attachmentFormatValidator,
+  attachmentPurposeValidator,
+  attachmentStatusValidator,
+  defaultVoicePartKeyValidator,
+  voicePartStatusValidator,
+} from "./lib/pieceAttachmentPolicy";
 
 export default defineSchema({
   // Singleton: this deployment serves exactly one Choir (see ADR-0001), so
@@ -40,12 +47,9 @@ export default defineSchema({
     arranger: v.optional(v.string()),
     notes: v.optional(v.string()),
     youtubeUrl: v.optional(v.string()),
-    // Flexible attached files — a Piece's real-world folder can hold a PDF,
-    // a MuseScore source, several per-voice MIDI files, and audio renders;
-    // this isn't a fixed "one PDF + one audio" shape. Embedded array, not a
-    // separate table: file count per Piece is small (single digits) and
-    // metadata-only (the bytes live in Convex file storage), so there's no
-    // document-size or query-shape reason to normalize it out.
+    // Legacy attachment shape. Kept required during the additive rollout to
+    // structured Piece attachments; #62 migrates these entries and #71 is
+    // responsible for removing this field only after rollout verification.
     files: v.array(
       v.object({
         storageId: v.id("_storage"),
@@ -60,6 +64,71 @@ export default defineSchema({
       }),
     ),
   }).index("by_title", ["title"]),
+
+  voiceParts: defineTable({
+    name: v.string(),
+    normalizedName: v.string(),
+    displayOrder: v.number(),
+    status: voicePartStatusValidator,
+    isAll: v.boolean(),
+    defaultKey: v.optional(defaultVoicePartKeyValidator),
+    updatedAt: v.number(),
+    updatedByMemberId: v.optional(v.id("members")),
+  })
+    .index("by_default_key", ["defaultKey"])
+    .index("by_normalized_name", ["normalizedName"])
+    .index("by_status_and_display_order", ["status", "displayOrder"]),
+
+  pieceAttachments: defineTable({
+    pieceId: v.id("pieces"),
+    format: attachmentFormatValidator,
+    purpose: attachmentPurposeValidator,
+    voicePartIds: v.array(v.id("voiceParts")),
+    label: v.optional(v.string()),
+    filenameOverride: v.optional(v.string()),
+    displayOrder: v.number(),
+    isPrimary: v.boolean(),
+    currentVersionId: v.optional(v.id("pieceFileVersions")),
+    status: attachmentStatusValidator,
+    updatedAt: v.number(),
+    createdByMemberId: v.optional(v.id("members")),
+    updatedByMemberId: v.optional(v.id("members")),
+    recycledAt: v.optional(v.number()),
+    recycledByMemberId: v.optional(v.id("members")),
+  })
+    .index("by_piece_id_and_status_and_display_order", [
+      "pieceId",
+      "status",
+      "displayOrder",
+    ])
+    .index("by_piece_id_and_status_and_is_primary", [
+      "pieceId",
+      "status",
+      "isPrimary",
+    ])
+    .index("by_status_and_recycled_at", ["status", "recycledAt"]),
+
+  pieceFileVersions: defineTable({
+    attachmentId: v.id("pieceAttachments"),
+    storageId: v.id("_storage"),
+    revisionNumber: v.number(),
+    originalFilename: v.string(),
+    contentType: v.optional(v.string()),
+    size: v.number(),
+    sha256: v.string(),
+    durationSeconds: v.optional(v.number()),
+    uploadedAt: v.number(),
+    uploadedByMemberId: v.optional(v.id("members")),
+    revisionNote: v.optional(v.string()),
+    revisionLabel: v.optional(v.string()),
+  })
+    .index("by_attachment_id_and_revision_number", [
+      "attachmentId",
+      "revisionNumber",
+    ])
+    .index("by_attachment_id_and_uploaded_at", ["attachmentId", "uploadedAt"])
+    .index("by_storage_id", ["storageId"])
+    .index("by_uploaded_at", ["uploadedAt"]),
 
   events: defineTable({
     title: v.string(),

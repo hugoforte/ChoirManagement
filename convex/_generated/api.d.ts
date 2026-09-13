@@ -12,6 +12,8 @@ import type * as choirSettings from "../choirSettings.js";
 import type * as events from "../events.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_capabilities from "../lib/capabilities.js";
+import type * as lib_pieceAttachmentPolicy from "../lib/pieceAttachmentPolicy.js";
+import type * as lib_text from "../lib/text.js";
 import type * as members from "../members.js";
 import type * as pieces from "../pieces.js";
 import type * as public_ from "../public.js";
@@ -28,6 +30,8 @@ declare const fullApi: ApiFromModules<{
   events: typeof events;
   "lib/auth": typeof lib_auth;
   "lib/capabilities": typeof lib_capabilities;
+  "lib/pieceAttachmentPolicy": typeof lib_pieceAttachmentPolicy;
+  "lib/text": typeof lib_text;
   members: typeof members;
   pieces: typeof pieces;
   public: typeof public_;
