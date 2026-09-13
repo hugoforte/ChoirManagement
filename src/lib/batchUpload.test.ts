@@ -157,6 +157,26 @@ describe("BatchUploadManager", () => {
     expect(transport.calls).toEqual(["kept", "cancelled"]);
   });
 
+  it("reports cleanup failure and retains cancelled entries for recovery", async () => {
+    const transport = new ControlledTransport();
+    const manager = new BatchUploadManager({
+      transport,
+      discardUnreferenced: async () => {
+        throw new Error("backend unavailable");
+      },
+    });
+    manager.addFiles([file("orphan")]);
+    await waitFor(() => expect(transport.calls).toEqual(["orphan"]));
+    transport.resolve("orphan");
+    await expectComplete(manager);
+
+    await expect(manager.cancelAll()).resolves.toBe(false);
+    expect(manager.getSnapshot()).toMatchObject({
+      error: "Upload cleanup failed: backend unavailable",
+      files: [{ status: "cancelled", uploaded: { storageId: "storage-orphan" } }],
+    });
+  });
+
   it("calculates SHA-256, records comparison metadata, and warns at the configured threshold", async () => {
     const transport = new ControlledTransport();
     const manager = new BatchUploadManager({ transport, largeFileWarningBytes: 5 });

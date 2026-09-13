@@ -24,8 +24,8 @@ export interface UseBatchUploadOptions {
 export interface UseBatchUploadResult extends BatchUploadSnapshot {
   addFiles: (files: readonly File[]) => string[];
   retry: (fileId: string) => boolean;
-  cancel: (fileId: string) => Promise<void>;
-  cancelAll: () => Promise<void>;
+  cancel: (fileId: string) => Promise<boolean>;
+  cancelAll: () => Promise<boolean>;
   clearCompleted: () => void;
 }
 

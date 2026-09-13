@@ -212,19 +212,21 @@ export class BatchUploadManager {
     return true;
   }
 
-  async cancel(fileId: string): Promise<void> {
+  async cancel(fileId: string): Promise<boolean> {
     const upload = this.uploads.get(fileId);
-    if (!upload || upload.status === "cancelled") return;
+    if (!upload || upload.status === "cancelled") return true;
     this.cancelUpload(upload);
-    await this.cleanupUploads([upload]);
+    const cleaned = await this.cleanupUploads([upload]);
     this.publish();
+    return cleaned;
   }
 
-  async cancelAll(): Promise<void> {
+  async cancelAll(): Promise<boolean> {
     const uploads = [...this.uploads.values()];
     for (const upload of uploads) this.cancelUpload(upload);
-    await this.cleanupUploads(uploads);
+    const cleaned = await this.cleanupUploads(uploads);
     this.publish();
+    return cleaned;
   }
 
   clearCompleted(): void {
@@ -328,7 +330,7 @@ export class BatchUploadManager {
     }
   }
 
-  private async cleanupUploads(uploads: readonly InternalUpload[]): Promise<void> {
+  private async cleanupUploads(uploads: readonly InternalUpload[]): Promise<boolean> {
     const storageIds = uploads
       .map((upload) => upload.uploaded?.storageId)
       .filter((storageId): storageId is StorageId => storageId !== undefined)
@@ -336,12 +338,12 @@ export class BatchUploadManager {
         (storageId) =>
           !this.cleanedStorageIds.has(storageId) && !this.cleaningStorageIds.has(storageId),
       );
-    if (storageIds.length === 0) return;
+    if (storageIds.length === 0) return true;
     for (const storageId of storageIds) this.cleaningStorageIds.add(storageId);
     if (!this.discardUnreferenced) {
       for (const storageId of storageIds) this.cleaningStorageIds.delete(storageId);
       this.batchError = "Uploaded files need cleanup, but no cleanup handler was configured.";
-      return;
+      return false;
     }
     try {
       await this.discardUnreferenced(storageIds);
@@ -349,9 +351,11 @@ export class BatchUploadManager {
         this.cleaningStorageIds.delete(storageId);
         this.cleanedStorageIds.add(storageId);
       }
+      return true;
     } catch (error) {
       for (const storageId of storageIds) this.cleaningStorageIds.delete(storageId);
       this.batchError = `Upload cleanup failed: ${errorMessage(error)}`;
+      return false;
     }
   }
 
