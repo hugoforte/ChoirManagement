@@ -76,7 +76,11 @@ class ControlledTransport implements UploadTransport {
 }
 
 function file(name: string, contents = "hello"): File {
-  return new File([contents], name, { type: "application/octet-stream" });
+  const testFile = new File([contents], name, { type: "application/octet-stream" });
+  Object.defineProperty(testFile, "arrayBuffer", {
+    value: async () => new TextEncoder().encode(contents).buffer,
+  });
+  return testFile;
 }
 
 async function expectComplete(manager: BatchUploadManager): Promise<void> {
