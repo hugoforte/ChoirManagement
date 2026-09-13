@@ -70,10 +70,11 @@ function EventManageDetailContent() {
     await updateEvent({
       eventId: id,
       title: fields.title,
-      description: fields.description || undefined,
+      // "" normalizes to undefined server-side now, not here.
+      description: fields.description,
       startsAt: new Date(fields.startsAt).getTime(),
-      location: fields.location || undefined,
-      youtubeUrl: fields.youtubeUrl || undefined,
+      location: fields.location,
+      youtubeUrl: fields.youtubeUrl,
       setlist,
       visibility: fields.visibility,
     });
