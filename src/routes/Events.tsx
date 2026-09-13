@@ -4,27 +4,22 @@ import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
-import { MemberGate, canManage, isAdmin } from "../lib/memberGate";
-import { AppShell, RSVP_BADGE, RSVP_LABEL } from "../design/AppShell";
+import { canManage } from "../lib/roles";
+import { MemberPage } from "../design/MemberPage";
+import { RSVP_BADGE, RSVP_LABEL } from "../design/AppShell";
 
 export default function Events() {
-  return <MemberGate>{(viewer) => <EventsContent viewer={viewer} />}</MemberGate>;
+  return <MemberPage title="Events">{(viewer) => <EventsContent viewer={viewer} />}</MemberPage>;
 }
 
 function EventsContent({ viewer }: { viewer: Doc<"members"> }) {
-  const choirSettings = useQuery(api.choirSettings.get);
   const now = useMemo(() => Date.now(), []);
   const events = useQuery(api.events.list, { now });
   const myRsvps = useQuery(api.events.myRsvps);
   const statusByEvent = new Map(myRsvps?.map((r) => [r.eventId, r.status]));
 
   return (
-    <AppShell
-      choirName={choirSettings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle="Events"
-    >
+    <>
       {canManage(viewer) && (
         <Link to="/events/manage" className="mb-4 inline-block text-sm text-brand-600 hover:underline dark:text-brand-400">
           Manage
@@ -102,6 +97,6 @@ function EventsContent({ viewer }: { viewer: Doc<"members"> }) {
           </ul>
         </>
       )}
-    </AppShell>
+    </>
   );
 }

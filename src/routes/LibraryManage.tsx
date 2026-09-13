@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
-import { MemberGate, canManage, isAdmin } from "../lib/memberGate";
-import { AppShell } from "../design/AppShell";
-import { inputClass, primaryButtonClass, mutedLinkClass, dangerLinkClass, cardClass } from "../design/forms";
+import { canManage } from "../lib/roles";
+import { MemberPage } from "../design/MemberPage";
+import { inputClass, primaryButtonClass, dangerLinkClass, cardClass } from "../design/forms";
 
 type FileKind = "pdf" | "musescore" | "midi" | "audio" | "other";
 
@@ -21,31 +20,17 @@ function inferKind(filename: string): FileKind {
 
 export default function LibraryManage() {
   return (
-    <MemberGate>
-      {(viewer) => (canManage(viewer) ? <LibraryManageContent viewer={viewer} /> : <NoAccess viewer={viewer} />)}
-    </MemberGate>
-  );
-}
-
-function NoAccess({ viewer }: { viewer: Doc<"members"> }) {
-  const choirSettings = useQuery(api.choirSettings.get);
-  return (
-    <AppShell
-      choirName={choirSettings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle="Music Library"
+    <MemberPage
+      title="Manage Music Library"
+      require={canManage}
+      backTo={{ to: "/library", label: "Back to Music Library" }}
     >
-      <p className="text-sm text-stone-600 dark:text-stone-400">You don't have access to this page.</p>
-      <Link to="/library" className={mutedLinkClass}>
-        Back to Music Library
-      </Link>
-    </AppShell>
+      {() => <LibraryManageContent />}
+    </MemberPage>
   );
 }
 
-function LibraryManageContent({ viewer }: { viewer: Doc<"members"> }) {
-  const choirSettings = useQuery(api.choirSettings.get);
+function LibraryManageContent() {
   const pieces = useQuery(api.pieces.list);
   const createPiece = useMutation(api.pieces.create);
   const [newTitle, setNewTitle] = useState("");
@@ -64,12 +49,7 @@ function LibraryManageContent({ viewer }: { viewer: Doc<"members"> }) {
   }
 
   return (
-    <AppShell
-      choirName={choirSettings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle="Manage Music Library"
-    >
+    <>
       <form onSubmit={handleCreate} className="flex gap-2">
         <input
           type="text"
@@ -92,7 +72,7 @@ function LibraryManageContent({ viewer }: { viewer: Doc<"members"> }) {
           ))}
         </ul>
       )}
-    </AppShell>
+    </>
   );
 }
 

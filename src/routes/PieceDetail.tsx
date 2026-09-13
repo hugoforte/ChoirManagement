@@ -2,20 +2,19 @@ import { useParams } from "react-router-dom";
 import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
-import { Doc, Id } from "../../convex/_generated/dataModel";
-import { MemberGate, isAdmin } from "../lib/memberGate";
-import { AppShell } from "../design/AppShell";
+import { Id } from "../../convex/_generated/dataModel";
+import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { linkClass } from "../design/forms";
 import NotFound from "./NotFound";
 
 export default function PieceDetail() {
-  return <MemberGate>{(viewer) => <PieceDetailContent viewer={viewer} />}</MemberGate>;
+  return <MemberPage title="Music Library">{() => <PieceDetailContent />}</MemberPage>;
 }
 
-function PieceDetailContent({ viewer }: { viewer: Doc<"members"> }) {
-  const choirSettings = useQuery(api.choirSettings.get);
+function PieceDetailContent() {
   const { pieceId } = useParams<{ pieceId: string }>();
   const piece = useQuery(api.pieces.get, { pieceId: pieceId as Id<"pieces"> });
+  usePageTitle(piece?.title);
 
   if (piece === null) return <NotFound />;
 
@@ -24,12 +23,7 @@ function PieceDetailContent({ viewer }: { viewer: Doc<"members"> }) {
     : "";
 
   return (
-    <AppShell
-      choirName={choirSettings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle={piece?.title ?? "Music Library"}
-    >
+    <>
       {piece === undefined ? (
         <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>
       ) : (
@@ -76,6 +70,6 @@ function PieceDetailContent({ viewer }: { viewer: Doc<"members"> }) {
           )}
         </div>
       )}
-    </AppShell>
+    </>
   );
 }

@@ -3,33 +3,28 @@ import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
-import { MemberGate, canManage, isAdmin } from "../lib/memberGate";
-import { AppShell } from "../design/AppShell";
+import { canManage } from "../lib/roles";
+import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { linkClass } from "../design/forms";
 import NotFound from "./NotFound";
 
 const RSVP_OPTIONS = ["yes", "no", "maybe"] as const;
 
 export default function EventDetail() {
-  return <MemberGate>{(viewer) => <EventDetailContent viewer={viewer} />}</MemberGate>;
+  return <MemberPage title="Events">{(viewer) => <EventDetailContent viewer={viewer} />}</MemberPage>;
 }
 
 function EventDetailContent({ viewer }: { viewer: Doc<"members"> }) {
-  const choirSettings = useQuery(api.choirSettings.get);
   const { eventId } = useParams<{ eventId: string }>();
   const event = useQuery(api.events.get, { eventId: eventId as Id<"events"> });
   const rsvp = useMutation(api.events.rsvp);
   const roster = useQuery(api.events.roster, canManage(viewer) ? { eventId: eventId as Id<"events"> } : "skip");
+  usePageTitle(event?.title);
 
   if (event === null) return <NotFound />;
 
   return (
-    <AppShell
-      choirName={choirSettings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle={event?.title ?? "Events"}
-    >
+    <>
       {event === undefined ? (
         <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>
       ) : (
@@ -102,6 +97,6 @@ function EventDetailContent({ viewer }: { viewer: Doc<"members"> }) {
           )}
         </div>
       )}
-    </AppShell>
+    </>
   );
 }
