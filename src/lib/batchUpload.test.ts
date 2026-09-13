@@ -1,5 +1,6 @@
 import { waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { webcrypto } from "node:crypto";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   BatchUploadManager,
   DEFAULT_LARGE_FILE_WARNING_BYTES,
@@ -7,6 +8,15 @@ import {
   type UploadTransport,
   type UploadTransportOptions,
 } from "./batchUpload";
+
+beforeAll(() => {
+  // Node 20's jsdom global may expose Crypto without SubtleCrypto in CI.
+  // Production browsers provide this API; use Node's implementation here so
+  // the tests exercise the real hashing path deterministically.
+  vi.stubGlobal("crypto", webcrypto);
+});
+
+afterAll(() => vi.unstubAllGlobals());
 
 type PendingUpload = {
   file: File;
