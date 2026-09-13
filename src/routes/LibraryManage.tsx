@@ -4,20 +4,9 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
 import { useTrackedMutation } from "../lib/useTrackedMutation";
-import { useUpload } from "../lib/useUpload";
 import { MemberPage } from "../design/MemberPage";
 import { inputClass, primaryButtonClass, dangerLinkClass, cardClass } from "../design/forms";
-
-type FileKind = "pdf" | "musescore" | "midi" | "audio" | "other";
-
-function inferKind(filename: string): FileKind {
-  const ext = filename.split(".").pop()?.toLowerCase();
-  if (ext === "pdf") return "pdf";
-  if (ext === "mscz" || ext === "mscx") return "musescore";
-  if (ext === "mid" || ext === "midi") return "midi";
-  if (["mp3", "wav", "m4a", "ogg", "flac"].includes(ext ?? "")) return "audio";
-  return "other";
-}
+import { AttachmentBatchReview } from "../components/attachments/AttachmentBatchReview";
 
 export default function LibraryManage() {
   return (
@@ -76,9 +65,7 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
   const [expanded, setExpanded] = useState(false);
   const { run: updatePiece, pending: saving, error: saveError } = useTrackedMutation(api.pieces.update);
   const { run: removePiece, error: removeError } = useTrackedMutation(api.pieces.remove);
-  const { run: attachFile, error: attachError } = useTrackedMutation(api.pieces.attachFile);
   const { run: detachFile, error: detachError } = useTrackedMutation(api.pieces.detachFile);
-  const { upload, uploading, error: uploadError } = useUpload(api.pieces.generateUploadUrl);
   const detail = useQuery(api.pieces.get, expanded ? { pieceId: piece._id } : "skip");
 
   const [fields, setFields] = useState({
@@ -89,7 +76,7 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
     youtubeUrl: piece.youtubeUrl ?? "",
   });
 
-  const error = saveError ?? removeError ?? attachError ?? detachError ?? uploadError;
+  const error = saveError ?? removeError ?? detachError;
 
   async function handleSave() {
     // "" normalizes to undefined server-side now, not here.
@@ -106,15 +93,6 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
   async function handleDelete() {
     if (!confirm(`Delete "${piece.title}"? This also deletes its attached files.`)) return;
     await removePiece({ pieceId: piece._id });
-  }
-
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const storageId = await upload(file);
-    e.target.value = "";
-    if (storageId === undefined) return; // upload's own error is already surfaced
-    await attachFile({ pieceId: piece._id, storageId, filename: file.name, kind: inferKind(file.name) });
   }
 
   return (
@@ -191,8 +169,13 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
                 ))}
               </ul>
             )}
-            <input type="file" onChange={handleFileUpload} disabled={uploading} className="mt-2 text-sm" />
           </div>
+          <AttachmentBatchReview
+            pieceId={piece._id}
+            title={fields.title}
+            composer={fields.composer}
+            arranger={fields.arranger}
+          />
         </div>
       )}
     </li>
