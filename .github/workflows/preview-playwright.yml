@@ -137,7 +137,7 @@ jobs:
         if: github.event_name == 'schedule' || steps.production-secrets.outputs.available == 'true'
         run: npx playwright test --project=chromium-production-smoke
         env:
-          PLAYWRIGHT_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://ahava-choir-management.vercel.app' }}
+          PLAYWRIGHT_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://choir-management-tawny.vercel.app' }}
           PRODUCTION_PUBLIC_EVENT_ID: ${{ vars.PRODUCTION_PUBLIC_EVENT_ID }}
 
   # Runs on PRs, against the branch's OWN preview deployment — not against

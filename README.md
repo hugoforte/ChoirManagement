@@ -1,6 +1,6 @@
 # ChoirManagement
 
-> Live demo: [ahava-choir-management.vercel.app](https://ahava-choir-management.vercel.app/)
+> Live demo: [choir-management-tawny.vercel.app](https://choir-management-tawny.vercel.app/)
 
 An open-source, self-hosted web app for choirs to manage their music library, member roster, and event scheduling — built on [Convex](https://convex.dev), [Clerk](https://clerk.com), and [Vercel](https://vercel.com).
 
