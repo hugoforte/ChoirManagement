@@ -12,7 +12,7 @@
     "dev:backend": "convex dev",
     "build": "vite build",
     "codegen": "convex codegen",
-    "check": "tsc -p convex --noEmit --pretty false && tsc -p . --noEmit --pretty false && vite build",
+    "check": "tsc -p convex --noEmit --pretty false && tsc -p tsconfig.app.json --noEmit --pretty false && tsc -p tsconfig.node.json --noEmit --pretty false && vite build",
     "lint": "npm run codegen && npm run check",
     "test": "vitest run",
     "test:e2e": "playwright test",
