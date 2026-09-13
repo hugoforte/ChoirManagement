@@ -19,11 +19,17 @@ test("public Events page loads for a guest visitor", async ({ page }) => {
 // gate + ResolvedMemberPage exists to prevent (see #27): a Member-only route
 // must redirect a signed-out visitor before any requireMember-backed query
 // (like choirSettings.get) ever subscribes, not throw and blank the page.
+//
+// waitForURL, not expect(page).toHaveURL()'s default 5s timeout — an
+// anonymous visit to a cold, ephemeral preview URL can take longer than that
+// just for useAuth()'s isLoaded to resolve, before MemberPage ever decides
+// to redirect. Same historical Clerk-latency shape this file's other
+// comment already describes, just on a gated route instead of /public/events.
 test("a signed-out visitor hitting a Member-only route is redirected to the public Events page", async ({
   page,
 }) => {
   await page.goto("/events");
-  await expect(page).toHaveURL(/\/public\/events$/);
+  await page.waitForURL(/\/public\/events$/, { timeout: 15000 });
   await expect(page.getByRole("heading", { name: "Upcoming Events" })).toBeVisible();
 });
 
