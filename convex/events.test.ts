@@ -131,6 +131,39 @@ test("remove deletes the Event and its RSVPs", async () => {
   expect(rsvps).toHaveLength(0);
 });
 
+test("update refuses a Chorister", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const eventId = await asDirector.mutation(api.events.create, { ...baseEvent, startsAt: 0 });
+
+  await expect(
+    t.withIdentity(choristerIdentity).mutation(api.events.update, { eventId, ...baseEvent, startsAt: 0 }),
+  ).rejects.toThrow(/Requires capability: manageEvents/);
+});
+
+test("remove refuses a Chorister", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const eventId = await asDirector.mutation(api.events.create, { ...baseEvent, startsAt: 0 });
+
+  await expect(t.withIdentity(choristerIdentity).mutation(api.events.remove, { eventId })).rejects.toThrow(
+    /Requires capability: manageEvents/,
+  );
+});
+
+test("duplicate refuses a Chorister", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const eventId = await asDirector.mutation(api.events.create, { ...baseEvent, startsAt: 0 });
+
+  await expect(t.withIdentity(choristerIdentity).mutation(api.events.duplicate, { eventId })).rejects.toThrow(
+    /Requires capability: manageEvents/,
+  );
+});
+
 test("duplicate copies fields and Setlist but shifts startsAt by a week", async () => {
   const t = convexTest(schema, modules);
   await seedMembers(t);
