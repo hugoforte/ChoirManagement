@@ -3,7 +3,7 @@ import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
-import { canManage } from "../lib/roles";
+import { can } from "../lib/roles";
 import { MemberPage } from "../design/MemberPage";
 import { linkClass } from "../design/forms";
 
@@ -16,7 +16,7 @@ function LibraryContent({ viewer }: { viewer: Doc<"members"> }) {
 
   return (
     <>
-      {canManage(viewer) && (
+      {can(viewer, "manageLibrary") && (
         <Link to="/library/manage" className={`mb-4 inline-block ${linkClass}`}>
           Manage
         </Link>

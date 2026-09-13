@@ -15,6 +15,10 @@ _Avoid_: User, Account, Singer
 **Role**:
 The access level a Member holds within their Choir: Admin, Director, or Chorister.
 
+**Capability**:
+A named thing a Role may do — `manageEvents`, `manageLibrary`, `manageRoster`, `assignRoles`, `manageSettings`. The single table mapping Capability to allowed Roles lives in `convex/lib/capabilities.ts`; both the backend (`requireCan`) and the frontend (`can`) read it, so the Role-to-Capability rule is written once, not separately in each. `manageRoster` (page access to the roster) is distinct from `assignRoles` (changing a Member's Role) — a Director holds the former but not the latter.
+_Avoid_: Permission (this project's term is Capability), Role (a Role is who; a Capability is what they can do)
+
 **Admin**:
 A Role that can manage Members, Roles, and Choir settings.
 

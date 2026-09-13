@@ -1,5 +1,6 @@
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
+import { roleCan, type Capability } from "./capabilities";
 
 export async function getCurrentMember(
   ctx: QueryCtx | MutationCtx,
@@ -22,13 +23,13 @@ export async function requireMember(
   return member;
 }
 
-export async function requireRole(
+export async function requireCan(
   ctx: QueryCtx | MutationCtx,
-  roles: Array<Doc<"members">["role"]>,
+  capability: Capability,
 ): Promise<Doc<"members">> {
   const member = await requireMember(ctx);
-  if (!roles.includes(member.role)) {
-    throw new Error(`Requires role: ${roles.join(" or ")}`);
+  if (!roleCan(member.role, capability)) {
+    throw new Error(`Requires capability: ${capability}`);
   }
   return member;
 }

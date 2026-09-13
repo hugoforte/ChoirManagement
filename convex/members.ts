@@ -1,6 +1,6 @@
 import { mutation, query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import { getCurrentMember, requireMember, requireRole } from "./lib/auth";
+import { getCurrentMember, requireMember, requireCan } from "./lib/auth";
 import schema from "./schema";
 
 const rosterEntry = v.object({
@@ -24,8 +24,9 @@ export const list = query({
   },
 });
 
-// Admin-only per CONTEXT.md ("Admin: can manage Members, Roles") — see
-// /members/manage's frontend gating in src/routes/MembersManage.tsx.
+// Admin-only per CONTEXT.md ("Admin: can manage Members, Roles"). Distinct
+// from manageRoster (Director+, page access to /members/manage) — see
+// convex/lib/capabilities.ts and src/routes/MembersManage.tsx.
 export const updateRole = mutation({
   args: {
     memberId: v.id("members"),
@@ -33,7 +34,7 @@ export const updateRole = mutation({
   },
   returns: v.null(),
   handler: async (ctx, { memberId, role }) => {
-    await requireRole(ctx, ["admin"]);
+    await requireCan(ctx, "assignRoles");
     await ctx.db.patch("members", memberId, { role });
     return null;
   },

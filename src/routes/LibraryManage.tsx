@@ -3,7 +3,6 @@ import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
-import { canManage } from "../lib/roles";
 import { MemberPage } from "../design/MemberPage";
 import { inputClass, primaryButtonClass, dangerLinkClass, cardClass } from "../design/forms";
 
@@ -22,7 +21,7 @@ export default function LibraryManage() {
   return (
     <MemberPage
       title="Manage Music Library"
-      require={canManage}
+      require="manageLibrary"
       backTo={{ to: "/library", label: "Back to Music Library" }}
     >
       {() => <LibraryManageContent />}

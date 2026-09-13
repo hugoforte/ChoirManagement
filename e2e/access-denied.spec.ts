@@ -14,7 +14,7 @@ test("a director hitting an Admin-only route sees the denial screen, not the pag
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   await expect(page.getByText("You don't have access to this page.")).toBeVisible();
   // The Settings nav item itself isn't offered to a non-Admin — same
-  // isAdmin check MemberPage uses to decide showSettings.
+  // manageSettings capability check MemberPage uses to decide showSettings.
   await expect(page.getByRole("link", { name: "Settings" })).toHaveCount(0);
 
   await page.getByRole("link", { name: "Back home" }).click();

@@ -49,7 +49,8 @@ ChoirManagement/
 ├── convex/                          # Convex backend (TypeScript)
 │   ├── schema.ts                    # Data model & tables
 │   ├── auth.config.ts               # Clerk JWT issuer wiring
-│   ├── lib/auth.ts                  # requireMember/requireRole helpers
+│   ├── lib/auth.ts                  # requireMember/requireCan helpers
+│   ├── lib/capabilities.ts          # Role → Capability table (see #28)
 │   ├── public.ts                    # Unauthenticated-safe functions only
 │   ├── *.ts                         # Other query/mutation functions
 │   ├── *.test.ts                    # convex-test unit tests
@@ -155,7 +156,7 @@ Don't skip tests for user-facing changes unless the environment makes them genui
 ### Convex Backend
 
 1. **Always validate function arguments and returns** using Convex validators (`v.*`) — every `query`, `mutation`, `internalMutation` etc. needs `args` and a `returns` validator.
-2. **Errors: throw, don't return discriminated unions.** `convex/lib/auth.ts`'s `requireMember`/`requireRole` throw plain `Error`s on failure — this matches Convex's own official `guidelines.md`, not a return-value error-object pattern. Stay consistent with this.
+2. **Errors: throw, don't return discriminated unions.** `convex/lib/auth.ts`'s `requireMember`/`requireCan` throw plain `Error`s on failure — this matches Convex's own official `guidelines.md`, not a return-value error-object pattern. Stay consistent with this.
 3. **Role lives on the `members` table, not a JWT claim** — a confirmed `convex@1.34.0` regression could silently drop custom claims; see `docs/research/convex-clerk-integration-pattern.md`.
 4. **Public functions live in `convex/public.ts` only**, and that module must never query `rsvps` or `members` — the public/private boundary is enforced by which functions exist where, not by a conditional inside a shared function.
 5. **`ctx.db.get`/`patch`/`delete`: prefer the table-qualified two-argument form** (`ctx.db.get("members", id)`) in new code, per current Convex guidelines.

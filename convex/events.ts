@@ -1,7 +1,7 @@
 import { mutation, query, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { requireMember, requireRole } from "./lib/auth";
+import { requireMember, requireCan } from "./lib/auth";
 import schema from "./schema";
 
 export const listUpcoming = query({
@@ -110,7 +110,7 @@ export const roster = query({
   args: { eventId: v.id("events") },
   returns: v.array(v.object({ memberId: v.id("members"), name: v.string(), status: rsvpStatus })),
   handler: async (ctx, { eventId }) => {
-    await requireRole(ctx, ["admin", "director"]);
+    await requireCan(ctx, "manageEvents");
     const rsvps = await ctx.db
       .query("rsvps")
       .withIndex("by_event", (q) => q.eq("eventId", eventId))
@@ -163,7 +163,7 @@ export const create = mutation({
   args: eventFields,
   returns: v.id("events"),
   handler: async (ctx, args) => {
-    await requireRole(ctx, ["admin", "director"]);
+    await requireCan(ctx, "manageEvents");
     return await ctx.db.insert("events", args);
   },
 });
@@ -172,7 +172,7 @@ export const update = mutation({
   args: { eventId: v.id("events"), ...eventFields },
   returns: v.null(),
   handler: async (ctx, { eventId, ...fields }) => {
-    await requireRole(ctx, ["admin", "director"]);
+    await requireCan(ctx, "manageEvents");
     await ctx.db.patch("events", eventId, fields);
     return null;
   },
@@ -182,7 +182,7 @@ export const remove = mutation({
   args: { eventId: v.id("events") },
   returns: v.null(),
   handler: async (ctx, { eventId }) => {
-    await requireRole(ctx, ["admin", "director"]);
+    await requireCan(ctx, "manageEvents");
     const rsvps = await ctx.db
       .query("rsvps")
       .withIndex("by_event", (q) => q.eq("eventId", eventId))
@@ -204,7 +204,7 @@ export const duplicate = mutation({
   args: { eventId: v.id("events") },
   returns: v.id("events"),
   handler: async (ctx, { eventId }) => {
-    await requireRole(ctx, ["admin", "director"]);
+    await requireCan(ctx, "manageEvents");
     const event = await ctx.db.get("events", eventId);
     if (!event) throw new Error("Event not found");
     return await ctx.db.insert("events", {

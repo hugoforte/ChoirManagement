@@ -3,13 +3,12 @@ import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
-import { isAdmin } from "../lib/roles";
 import { MemberPage } from "../design/MemberPage";
 import { inputClass, labelClass, primaryButtonClass } from "../design/forms";
 
 export default function Settings() {
   return (
-    <MemberPage title="Settings" require={isAdmin}>
+    <MemberPage title="Settings" require="manageSettings">
       {() => <SettingsContent />}
     </MemberPage>
   );

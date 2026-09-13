@@ -4,7 +4,6 @@ import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
-import { canManage } from "../lib/roles";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { inputClass, labelClass, primaryButtonClass, dangerLinkClass } from "../design/forms";
 import NotFound from "./NotFound";
@@ -17,7 +16,7 @@ function toDatetimeLocal(ms: number) {
 
 export default function EventManageDetail() {
   return (
-    <MemberPage title="Edit Event" require={canManage} backTo={{ to: "/events", label: "Back to Events" }}>
+    <MemberPage title="Edit Event" require="manageEvents" backTo={{ to: "/events", label: "Back to Events" }}>
       {() => <EventManageDetailContent />}
     </MemberPage>
   );

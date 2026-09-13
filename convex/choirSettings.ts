@@ -1,6 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireMember, requireRole } from "./lib/auth";
+import { requireMember, requireCan } from "./lib/auth";
 import schema from "./schema";
 
 // Member-only, not public: nothing in the destination asks for choir
@@ -29,7 +29,7 @@ export const generateLogoUploadUrl = mutation({
   args: {},
   returns: v.string(),
   handler: async (ctx) => {
-    await requireRole(ctx, ["admin"]);
+    await requireCan(ctx, "manageSettings");
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -43,7 +43,7 @@ export const update = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await requireRole(ctx, ["admin"]);
+    await requireCan(ctx, "manageSettings");
     const existing = await ctx.db.query("choirSettings").first();
     // Replacing the logo orphans the old file otherwise — nothing else
     // ever references a choirSettings logoStorageId once it's swapped.

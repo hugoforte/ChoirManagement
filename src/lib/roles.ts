@@ -1,12 +1,9 @@
-// The frontend half of the Role rule. Its backend twin is the
-// `requireRole(ctx, [...])` array literal repeated across convex/ — see #28,
-// which replaces both with one named capability table.
+// The frontend half of the Role rule. Its backend twin is requireCan
+// (convex/lib/auth.ts) — both read the same table (convex/lib/capabilities.ts),
+// so the two used to be able to drift is gone (see #28).
 import { Doc } from "../../convex/_generated/dataModel";
+import { roleCan, type Capability } from "../../convex/lib/capabilities";
 
-export function canManage(viewer: Doc<"members">): boolean {
-  return viewer.role === "admin" || viewer.role === "director";
-}
-
-export function isAdmin(viewer: Doc<"members">): boolean {
-  return viewer.role === "admin";
+export function can(viewer: Doc<"members">, capability: Capability): boolean {
+  return roleCan(viewer.role, capability);
 }

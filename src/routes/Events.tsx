@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
-import { canManage } from "../lib/roles";
+import { can } from "../lib/roles";
 import { MemberPage } from "../design/MemberPage";
 import { RSVP_BADGE, RSVP_LABEL } from "../design/AppShell";
 
@@ -20,7 +20,7 @@ function EventsContent({ viewer }: { viewer: Doc<"members"> }) {
 
   return (
     <>
-      {canManage(viewer) && (
+      {can(viewer, "manageEvents") && (
         <Link to="/events/manage" className="mb-4 inline-block text-sm text-brand-600 hover:underline dark:text-brand-400">
           Manage
         </Link>
