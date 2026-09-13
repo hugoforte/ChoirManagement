@@ -11,16 +11,26 @@ const modules = import.meta.glob("./**/*.ts");
 // holding throwaway data; convex-test reads the same process.env.
 process.env.ALLOW_DEMO_SEED = "true";
 
-test("demo seeds Pieces, Events, and Choir settings", async () => {
+test("demo seeds Pieces, Events, Choir settings, and default voice parts", async () => {
   const t = convexTest(schema, modules);
   await t.mutation(internal.seed.demo, {});
 
   const pieces = await t.run(async (ctx) => await ctx.db.query("pieces").collect());
   const events = await t.run(async (ctx) => await ctx.db.query("events").collect());
   const settings = await t.run(async (ctx) => await ctx.db.query("choirSettings").first());
+  const voiceParts = await t.run(
+    async (ctx) => await ctx.db.query("voiceParts").collect(),
+  );
 
   expect(pieces).toHaveLength(3);
   expect(settings?.name).toContain("staging");
+  expect(voiceParts.map((part) => part.name)).toEqual([
+    "All",
+    "Soprano",
+    "Alto",
+    "Tenor",
+    "Bass",
+  ]);
   // Every seeded Event must be in the future, otherwise the upcoming-Events
   // lists a reviewer opens the preview to check would render empty.
   expect(events).toHaveLength(2);
@@ -36,7 +46,54 @@ test("demo is idempotent", async () => {
   await t.mutation(internal.seed.demo, {});
 
   const pieces = await t.run(async (ctx) => await ctx.db.query("pieces").collect());
+  const voiceParts = await t.run(
+    async (ctx) => await ctx.db.query("voiceParts").collect(),
+  );
   expect(pieces).toHaveLength(3);
+  expect(voiceParts).toHaveLength(5);
+});
+
+test("default voice-part seeding preserves choir customization", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.seed.ensureDefaultVoiceParts, {});
+
+  await t.run(async (ctx) => {
+    const soprano = await ctx.db
+      .query("voiceParts")
+      .withIndex("by_default_key", (q) => q.eq("defaultKey", "soprano"))
+      .unique();
+    if (!soprano) throw new Error("Expected the default Soprano part");
+    await ctx.db.patch("voiceParts", soprano._id, {
+      name: "First Soprano",
+      normalizedName: "first soprano",
+      displayOrder: 12,
+      status: "archived",
+    });
+    await ctx.db.insert("voiceParts", {
+      name: "Baritone",
+      normalizedName: "baritone",
+      displayOrder: 6,
+      status: "active",
+      isAll: false,
+      updatedAt: Date.now(),
+    });
+  });
+
+  await t.mutation(internal.seed.ensureDefaultVoiceParts, {});
+
+  const voiceParts = await t.run(
+    async (ctx) => await ctx.db.query("voiceParts").collect(),
+  );
+  expect(voiceParts).toHaveLength(6);
+  expect(
+    voiceParts.find((part) => part.defaultKey === "soprano"),
+  ).toMatchObject({
+    name: "First Soprano",
+    normalizedName: "first soprano",
+    displayOrder: 12,
+    status: "archived",
+  });
+  expect(voiceParts.find((part) => part.name === "Baritone")).toBeDefined();
 });
 
 test("upsertRoleMember creates a Member at the requested Role", async () => {
