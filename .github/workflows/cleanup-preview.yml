@@ -1,9 +1,12 @@
 name: Clean up preview deployment
 
-# Preview deployments auto-delete after 5 days on their own (14 on paid
-# plans), which is a real safety net — but deleting one the moment its PR
-# closes (merged or not) keeps the project nowhere near the free-plan
+# Convex preview deployments auto-delete after 5 days on their own (14 on
+# paid plans), which is a real safety net — but deleting one the moment its
+# PR closes (merged or not) keeps the project nowhere near the free-plan
 # 40-deployment cap instead of just trusting the multi-day grace period.
+# Vercel has no equivalent cap or auto-expiry by default, so its preview
+# deployments would otherwise accumulate forever — same trigger, different
+# API, same reason: nothing else ever deletes these.
 on:
   pull_request:
     types: [closed]
@@ -11,8 +14,9 @@ on:
 jobs:
   cleanup:
     # pull_request (not pull_request_target) never receives secrets for a
-    # fork PR, so this can't leak CONVEX_ACCESS_TOKEN to an outside branch —
-    # matches the !fork guard used elsewhere in this repo's workflows.
+    # fork PR, so this can't leak CONVEX_ACCESS_TOKEN or VERCEL_TOKEN to an
+    # outside branch — matches the !fork guard used elsewhere in this repo's
+    # workflows.
     if: ${{ !github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -60,6 +64,59 @@ jobs:
                 throw new Error(`Delete failed (${res.status}): ${await res.text()}`);
               }
               console.log(`Deleted preview deployment "${match.name}" for branch "${branch}".`);
+            })().catch((err) => {
+              console.error(err.message);
+              process.exit(1);
+            });
+          '
+
+      # Unlike Convex's one-deployment-per-branch model, Vercel keeps every
+      # deployment a branch ever produced (one per push) — a PR with several
+      # commits leaves several. Vercel has no per-plan deployment cap the way
+      # Convex's free tier does, so this isn't urgent, but nothing else
+      # deletes these; they'd otherwise sit around indefinitely.
+      - name: Delete this branch's Vercel preview deployments
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_PROJECT_ID" ] || [ -z "$VERCEL_TEAM_ID" ]; then
+            echo "::notice title=Vercel cleanup skipped::VERCEL_TOKEN / VERCEL_PROJECT_ID / VERCEL_TEAM_ID not configured."
+            exit 0
+          fi
+          node -e '
+            const token = process.env.VERCEL_TOKEN;
+            const projectId = process.env.VERCEL_PROJECT_ID;
+            const teamId = process.env.VERCEL_TEAM_ID;
+            const branch = process.env.BRANCH;
+            const H = { Authorization: `Bearer ${token}` };
+
+            (async () => {
+              const list = await (await fetch(
+                `https://api.vercel.com/v7/deployments?projectId=${projectId}&teamId=${teamId}&branch=${encodeURIComponent(branch)}&limit=100`,
+                { headers: H },
+              )).json();
+
+              const deployments = list.deployments ?? [];
+              if (deployments.length === 0) {
+                console.log(`No Vercel deployments found for branch "${branch}" — nothing to clean up.`);
+                return;
+              }
+
+              for (const d of deployments) {
+                const res = await fetch(
+                  `https://api.vercel.com/v13/deployments/${d.uid}?teamId=${teamId}`,
+                  { method: "DELETE", headers: H },
+                );
+                // A deployment already gone (e.g. auto-expired) 404s — not a
+                // failure, the end state this step wants is the same either way.
+                if (!res.ok && res.status !== 404) {
+                  throw new Error(`Delete failed for ${d.uid} (${res.status}): ${await res.text()}`);
+                }
+                console.log(`Deleted Vercel deployment "${d.uid}" (${d.url}) for branch "${branch}".`);
+              }
             })().catch((err) => {
               console.error(err.message);
               process.exit(1);
