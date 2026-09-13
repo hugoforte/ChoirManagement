@@ -3,25 +3,19 @@ import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
-import { MemberGate, canManage, isAdmin } from "../lib/memberGate";
-import { AppShell } from "../design/AppShell";
+import { canManage } from "../lib/roles";
+import { MemberPage } from "../design/MemberPage";
 import { linkClass } from "../design/forms";
 
 export default function Library() {
-  return <MemberGate>{(viewer) => <LibraryContent viewer={viewer} />}</MemberGate>;
+  return <MemberPage title="Music Library">{(viewer) => <LibraryContent viewer={viewer} />}</MemberPage>;
 }
 
 function LibraryContent({ viewer }: { viewer: Doc<"members"> }) {
-  const choirSettings = useQuery(api.choirSettings.get);
   const pieces = useQuery(api.pieces.list);
 
   return (
-    <AppShell
-      choirName={choirSettings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle="Music Library"
-    >
+    <>
       {canManage(viewer) && (
         <Link to="/library/manage" className={`mb-4 inline-block ${linkClass}`}>
           Manage
@@ -48,6 +42,6 @@ function LibraryContent({ viewer }: { viewer: Doc<"members"> }) {
           </ul>
         </div>
       )}
-    </AppShell>
+    </>
   );
 }

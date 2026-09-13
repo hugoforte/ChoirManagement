@@ -190,9 +190,9 @@ jobs:
       # and seeded Member rows already exist on every preview — each has its
       # own setup project (e2e/auth.setup.ts, e2e/auth-admin.setup.ts) so a
       # broken account for one Role can't block the other's E2E.
-      - name: Run Director + Admin E2E projects against the preview deployment
+      - name: Run Director + Admin + anonymous-gate E2E projects against the preview deployment
         if: steps.secrets.outputs.available == 'true'
-        run: npx playwright test --project=chromium-director --project=chromium-admin
+        run: npx playwright test --project=chromium-director --project=chromium-admin --project=chromium-guest-clerk
         env:
           PLAYWRIGHT_BASE_URL: ${{ steps.deployment.outputs.deployment_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}

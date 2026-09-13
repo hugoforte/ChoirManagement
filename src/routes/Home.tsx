@@ -3,16 +3,17 @@ import { Link } from "react-router-dom";
 import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
-import { Doc } from "../../convex/_generated/dataModel";
-import { MemberGate, isAdmin } from "../lib/memberGate";
-import { AppShell, RSVP_BADGE, RSVP_LABEL } from "../design/AppShell";
+import { MemberPage } from "../design/MemberPage";
+import { RSVP_BADGE, RSVP_LABEL } from "../design/AppShell";
 
 export default function Home() {
-  return <MemberGate>{(viewer) => <HomeContentForMember viewer={viewer} />}</MemberGate>;
+  return <MemberPage title="Dashboard">{() => <HomeContentForMember />}</MemberPage>;
 }
 
-function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
-  const choirSettings = useQuery(api.choirSettings.get);
+// Still split out from the gate, per AGENTS.md: these queries are
+// requireMember-backed, so they must not subscribe until MemberPage has
+// resolved a real Member.
+function HomeContentForMember() {
   // Stable for the component's lifetime — re-fetching Date.now() on every
   // render would resubscribe the query each time instead of once.
   const now = useMemo(() => Date.now(), []);
@@ -23,12 +24,7 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
   const unfilled = upcoming?.filter((e) => !statusByEvent.has(e._id)).length ?? 0;
 
   return (
-    <AppShell
-      choirName={choirSettings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle="Dashboard"
-    >
+    <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatTile
           label="Upcoming events"
@@ -82,7 +78,7 @@ function HomeContentForMember({ viewer }: { viewer: Doc<"members"> }) {
           </ul>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }
 

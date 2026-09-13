@@ -1,39 +1,21 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
-import { Doc, Id } from "../../convex/_generated/dataModel";
-import { MemberGate, isAdmin } from "../lib/memberGate";
-import { AppShell } from "../design/AppShell";
-import { inputClass, labelClass, primaryButtonClass, mutedLinkClass } from "../design/forms";
+import { Id } from "../../convex/_generated/dataModel";
+import { isAdmin } from "../lib/roles";
+import { MemberPage } from "../design/MemberPage";
+import { inputClass, labelClass, primaryButtonClass } from "../design/forms";
 
 export default function Settings() {
   return (
-    <MemberGate>
-      {(viewer) => (isAdmin(viewer) ? <SettingsContent viewer={viewer} /> : <NoAccess viewer={viewer} />)}
-    </MemberGate>
+    <MemberPage title="Settings" require={isAdmin}>
+      {() => <SettingsContent />}
+    </MemberPage>
   );
 }
 
-function NoAccess({ viewer }: { viewer: Doc<"members"> }) {
-  const choirSettings = useQuery(api.choirSettings.get);
-  return (
-    <AppShell
-      choirName={choirSettings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle="Settings"
-    >
-      <p className="text-sm text-stone-600 dark:text-stone-400">You don't have access to this page.</p>
-      <Link to="/" className={mutedLinkClass}>
-        Back home
-      </Link>
-    </AppShell>
-  );
-}
-
-function SettingsContent({ viewer }: { viewer: Doc<"members"> }) {
+function SettingsContent() {
   const settings = useQuery(api.choirSettings.get);
   const update = useMutation(api.choirSettings.update);
   const generateLogoUploadUrl = useMutation(api.choirSettings.generateLogoUploadUrl);
@@ -94,12 +76,7 @@ function SettingsContent({ viewer }: { viewer: Doc<"members"> }) {
   }
 
   return (
-    <AppShell
-      choirName={settings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle="Settings"
-    >
+    <>
       {settings === undefined ? (
         <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>
       ) : (
@@ -167,6 +144,6 @@ function SettingsContent({ viewer }: { viewer: Doc<"members"> }) {
           </form>
         </div>
       )}
-    </AppShell>
+    </>
   );
 }

@@ -3,24 +3,19 @@ import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
-import { MemberGate, isAdmin } from "../lib/memberGate";
-import { AppShell, initials } from "../design/AppShell";
+import { isAdmin } from "../lib/roles";
+import { MemberPage } from "../design/MemberPage";
+import { initials } from "../design/AppShell";
 
 export default function Members() {
-  return <MemberGate>{(viewer) => <MembersContent viewer={viewer} />}</MemberGate>;
+  return <MemberPage title="Roster">{(viewer) => <MembersContent viewer={viewer} />}</MemberPage>;
 }
 
 function MembersContent({ viewer }: { viewer: Doc<"members"> }) {
-  const choirSettings = useQuery(api.choirSettings.get);
   const members = useQuery(api.members.list);
 
   return (
-    <AppShell
-      choirName={choirSettings?.name ?? "ChoirManagement"}
-      viewerName={viewer.name}
-      showSettings={isAdmin(viewer)}
-      pageTitle="Roster"
-    >
+    <>
       {isAdmin(viewer) && (
         <Link to="/members/manage" className="mb-4 inline-block text-sm text-brand-600 hover:underline dark:text-brand-400">
           Manage
@@ -60,6 +55,6 @@ function MembersContent({ viewer }: { viewer: Doc<"members"> }) {
           </table>
         </div>
       )}
-    </AppShell>
+    </>
   );
 }
