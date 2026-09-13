@@ -4,12 +4,11 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
 import { can } from "../lib/roles";
+import { RSVP_LABEL, RSVP_STATUSES } from "../lib/rsvp";
 import { useTrackedMutation } from "../lib/useTrackedMutation";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { linkClass } from "../design/forms";
 import NotFound from "./NotFound";
-
-const RSVP_OPTIONS = ["yes", "no", "maybe"] as const;
 
 export default function EventDetail() {
   return <MemberPage title="Events">{(viewer) => <EventDetailContent viewer={viewer} />}</MemberPage>;
@@ -46,19 +45,19 @@ function EventDetailContent({ viewer }: { viewer: Doc<"members"> }) {
 
           <div className="mt-6 flex items-center gap-2">
             <span className="text-sm font-medium">Your RSVP:</span>
-            {RSVP_OPTIONS.map((status) => (
+            {RSVP_STATUSES.map((status) => (
               <button
                 key={status}
                 onClick={() => rsvp({ eventId: event._id, status })}
                 disabled={rsvpPending}
                 aria-pressed={event.myRsvp === status}
-                className={`rounded-lg px-3 py-1 text-sm capitalize disabled:opacity-50 ${
+                className={`rounded-lg px-3 py-1 text-sm disabled:opacity-50 ${
                   event.myRsvp === status
                     ? "bg-brand-600 text-white"
                     : "border border-stone-300 text-stone-700 hover:bg-stone-50 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
                 }`}
               >
-                {status}
+                {RSVP_LABEL[status]}
               </button>
             ))}
           </div>
@@ -91,7 +90,7 @@ function EventDetailContent({ viewer }: { viewer: Doc<"members"> }) {
                   {roster.map((r) => (
                     <li key={r.memberId} className="flex items-center justify-between text-sm">
                       <span>{r.name}</span>
-                      <span className="capitalize text-stone-600 dark:text-stone-400">{r.status}</span>
+                      <span className="text-stone-600 dark:text-stone-400">{RSVP_LABEL[r.status]}</span>
                     </li>
                   ))}
                 </ul>

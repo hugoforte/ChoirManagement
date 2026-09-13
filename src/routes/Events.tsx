@@ -6,7 +6,7 @@ import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
 import { can } from "../lib/roles";
 import { MemberPage } from "../design/MemberPage";
-import { RSVP_BADGE, RSVP_LABEL } from "../design/AppShell";
+import { RSVP_BADGE, RSVP_LABEL } from "../lib/rsvp";
 
 export default function Events() {
   return <MemberPage title="Events">{(viewer) => <EventsContent viewer={viewer} />}</MemberPage>;
