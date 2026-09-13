@@ -3,7 +3,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { requireCan } from "./lib/auth";
-import { requirePieceAccess } from "./lib/pieceAccess";
+import { findPieceWithAccess, requirePieceAccess } from "./lib/pieceAccess";
 import { normalizeOptionalText } from "./lib/text";
 import {
   attachmentFormatValidator,
@@ -182,12 +182,16 @@ export const listActive = query({
 
 export const getMemberDetail = query({
   args: { pieceId: v.id("pieces") },
-  returns: v.object({
-    piece: schema.doc("pieces"),
-    attachments: v.array(currentAttachmentValidator),
-  }),
+  returns: v.union(
+    v.null(),
+    v.object({
+      piece: schema.doc("pieces"),
+      attachments: v.array(currentAttachmentValidator),
+    }),
+  ),
   handler: async (ctx, { pieceId }) => {
-    const piece = await requirePieceAccess(ctx, pieceId);
+    const piece = await findPieceWithAccess(ctx, pieceId);
+    if (!piece) return null;
     return {
       piece,
       attachments: await resolveCurrentAttachments(

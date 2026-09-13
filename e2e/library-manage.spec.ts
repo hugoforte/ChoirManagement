@@ -68,4 +68,27 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
   await expect(page.getByText(`${title} score.pdf — primary`)).toBeVisible();
   await expect(page.getByText(`${title}.mscz`)).toBeVisible();
   await expect(page.getByText(`${title} tenor.mp3`)).toBeVisible();
+
+  await page.goto("/library");
+  await page.getByRole("link", { name: title }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open main score" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Rehearsal" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Download .*Full Score\.pdf/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Download .*Editable Full Score\.mscz/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Download .*Part Rehearsal - Tenor\.mp3/ }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Tenor" }).click();
+  await expect(
+    page.getByRole("link", { name: /Download .*Part Rehearsal - Tenor\.mp3/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Download .*Editable Full Score\.mscz/ }),
+  ).toHaveCount(0);
 });

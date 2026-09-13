@@ -95,7 +95,7 @@ function fullScore(storageId: string) {
 }
 
 test("a Director publishes a batch atomically and every Member can list it", async () => {
-  const { t, pieceId, tenorPartId } = await setup();
+  const { t, pieceId, otherPieceId, tenorPartId } = await setup();
   const pdfId = await store(t);
   const rehearsalId = await store(t, "audio bytes");
 
@@ -150,8 +150,15 @@ test("a Director publishes a batch atomically and every Member can list it", asy
   const memberDetail = await t
     .withIdentity(choristerIdentity)
     .query(api.pieceAttachments.getMemberDetail, { pieceId });
+  if (!memberDetail) throw new Error("Expected Member Piece detail");
   expect(memberDetail.piece.title).toBe("Ave Verum");
   expect(memberDetail.attachments).toHaveLength(2);
+  await t.run(async (ctx) => await ctx.db.delete("pieces", otherPieceId));
+  expect(
+    await t
+      .withIdentity(choristerIdentity)
+      .query(api.pieceAttachments.getMemberDetail, { pieceId: otherPieceId }),
+  ).toBeNull();
 });
 
 test("management detail and all management mutations refuse a Chorister", async () => {
