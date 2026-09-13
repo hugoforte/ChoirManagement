@@ -100,6 +100,8 @@ this repo was a misdiagnosis of preview builds that were failing for unrelated r
 | Find the deployment for a commit | **[API]** `GET /v6/deployments?projectId=…&state=READY`, match `meta.githubCommitSha` | What `scripts/ci/resolve-vercel-deployment-url.mjs` does. Preview deployments have `target: null`. |
 | Stable per-branch URL | — | Each deployment also gets a branch alias (`…-git-<branch>-<team>.vercel.app`) that follows new commits — better to hand a human than the per-deployment hash URL. |
 | Install a marketplace integration | **[HUMAN]**, currently **broken** | `vercel integration add convex --plan CONVEX_BASE` routes to a terms page that dies with `Missing billingPlanId for installation-only plan integration`. Not needed — the Management API route above replaces it. |
+| List deployments for a branch | **[API]** `GET /v7/deployments?projectId=…&branch=<name>` | Unlike Convex, filtering by branch is a server-side query param — no need to list everything and filter client-side. |
+| Tear down a deployment | **[API]** `DELETE /v13/deployments/{id}` | No CLI equivalent. Automated alongside Convex's teardown: `.github/workflows/cleanup-preview.yml` runs on `pull_request: closed` and deletes every deployment for that branch (a branch with several pushes has several). 404 on an already-gone deployment is treated as success. Unlike Convex, Vercel has **no deployment cap or default auto-expiry**, so before this these would have accumulated indefinitely. |
 
 ## GitHub
 
