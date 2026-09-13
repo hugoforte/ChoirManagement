@@ -2,8 +2,9 @@ import { useState } from "react";
 import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
-import { Doc, Id } from "../../convex/_generated/dataModel";
+import { Doc } from "../../convex/_generated/dataModel";
 import { useTrackedMutation } from "../lib/useTrackedMutation";
+import { useUpload } from "../lib/useUpload";
 import { MemberPage } from "../design/MemberPage";
 import { inputClass, primaryButtonClass, dangerLinkClass, cardClass } from "../design/forms";
 
@@ -75,9 +76,9 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
   const [expanded, setExpanded] = useState(false);
   const { run: updatePiece, pending: saving, error: saveError } = useTrackedMutation(api.pieces.update);
   const { run: removePiece, error: removeError } = useTrackedMutation(api.pieces.remove);
-  const { run: generateUploadUrl, error: generateError } = useTrackedMutation(api.pieces.generateUploadUrl);
   const { run: attachFile, error: attachError } = useTrackedMutation(api.pieces.attachFile);
   const { run: detachFile, error: detachError } = useTrackedMutation(api.pieces.detachFile);
+  const { upload, uploading, error: uploadError } = useUpload(api.pieces.generateUploadUrl);
   const detail = useQuery(api.pieces.get, expanded ? { pieceId: piece._id } : "skip");
 
   const [fields, setFields] = useState({
@@ -87,13 +88,8 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
     notes: piece.notes ?? "",
     youtubeUrl: piece.youtubeUrl ?? "",
   });
-  const [uploading, setUploading] = useState(false);
-  // The raw fetch POST below isn't a Convex mutation, so useTrackedMutation
-  // can't wrap it — a dedicated upload seam is #32's job, which lands on
-  // top of this ticket's hook rather than duplicating it.
-  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const error = saveError ?? removeError ?? generateError ?? attachError ?? detachError ?? uploadError;
+  const error = saveError ?? removeError ?? attachError ?? detachError ?? uploadError;
 
   async function handleSave() {
     await updatePiece({
@@ -114,24 +110,10 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploading(true);
-    setUploadError(null);
-    try {
-      const uploadUrl = await generateUploadUrl();
-      if (uploadUrl === undefined) return; // generateUploadUrl's own error is already surfaced
-      const res = await fetch(uploadUrl, {
-        method: "POST",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
-      });
-      const { storageId } = (await res.json()) as { storageId: Id<"_storage"> };
-      await attachFile({ pieceId: piece._id, storageId, filename: file.name, kind: inferKind(file.name) });
-    } catch {
-      setUploadError("Upload failed. Please try again.");
-    } finally {
-      setUploading(false);
-      e.target.value = "";
-    }
+    const storageId = await upload(file);
+    e.target.value = "";
+    if (storageId === undefined) return; // upload's own error is already surfaced
+    await attachFile({ pieceId: piece._id, storageId, filename: file.name, kind: inferKind(file.name) });
   }
 
   return (
