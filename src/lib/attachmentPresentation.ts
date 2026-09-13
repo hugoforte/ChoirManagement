@@ -5,13 +5,8 @@ import {
   type VoicePart,
 } from "./attachmentClassification";
 
-/** The small, framework-independent part of a configured choir voice part. */
-export interface PresentationPart {
-  id: string;
-  name: string;
-  order: number;
-  isAll: boolean;
-}
+/** A configured choir part with the optional `isAll` flag made explicit. */
+export type PresentationPart = Omit<VoicePart, "isAll"> & { isAll: boolean };
 
 /** A current active attachment joined with its current revision and URL. */
 export interface PresentationAttachmentInput {
@@ -139,6 +134,12 @@ const EDITABLE_OTHER_PURPOSES = new Set<AttachmentPurpose>([
   "other",
 ]);
 
+const PART_SPECIFIC_PURPOSES = new Set<AttachmentPurpose>([
+  "partScore",
+  "editablePartScore",
+  "partRehearsal",
+]);
+
 function groupForPurpose(purpose: AttachmentPurpose): AttachmentGroupKey {
   if (SCORE_TEXT_PURPOSES.has(purpose)) return "scoresText";
   if (purpose === "partRehearsal") return "rehearsal";
@@ -166,7 +167,7 @@ function orderedParts(parts: readonly PresentationPart[]): PresentationPart[] {
         return left.part.isAll ? -1 : 1;
       }
       return (
-        compareNumbers(left.part.order, right.part.order) ||
+        compareNumbers(left.part.displayOrder, right.part.displayOrder) ||
         left.part.name.localeCompare(right.part.name) ||
         left.part.id.localeCompare(right.part.id) ||
         left.index - right.index
@@ -192,12 +193,7 @@ function standardizedName(
   piece: PresentationPieceInput,
   attachment: PresentationAttachmentInput,
 ): string {
-  const parts: VoicePart[] = attachment.parts.map((part) => ({
-    id: part.id,
-    name: part.name,
-    displayOrder: part.order,
-    isAll: part.isAll,
-  }));
+  const parts: VoicePart[] = [...attachment.parts];
   return generateStandardizedFilename({
     title: piece.title,
     composer: piece.composer ?? undefined,
@@ -280,7 +276,7 @@ function sortByManualOrder(
 
 function partRank(part: PresentationPart | null): number {
   if (!part) return Number.POSITIVE_INFINITY;
-  return part.isAll ? 0 : part.order + 1;
+  return part.isAll ? 0 : part.displayOrder + 1;
 }
 
 function rehearsalSectionFor(
@@ -345,11 +341,7 @@ function isGeneralScoreOrDocument(
   attachment: PresentationAttachmentInput,
 ): boolean {
   if (attachment.parts.length > 0) return false;
-  return (
-    attachment.format === "pdf" ||
-    attachment.format === "image" ||
-    attachment.format === "other"
-  );
+  return !PART_SPECIFIC_PURPOSES.has(attachment.purpose);
 }
 
 /**

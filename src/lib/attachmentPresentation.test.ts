@@ -11,16 +11,16 @@ import {
   type PresentationPart,
 } from "./attachmentPresentation";
 
-const all: PresentationPart = { id: "all", name: "All", order: 0, isAll: true };
+const all: PresentationPart = { id: "all", name: "All", displayOrder: 0, isAll: true };
 const soprano: PresentationPart = {
   id: "soprano",
   name: "Soprano",
-  order: 1,
+  displayOrder: 1,
   isAll: false,
 };
-const alto: PresentationPart = { id: "alto", name: "Alto", order: 2, isAll: false };
-const tenor: PresentationPart = { id: "tenor", name: "Tenor", order: 3, isAll: false };
-const bass: PresentationPart = { id: "bass", name: "Bass", order: 4, isAll: false };
+const alto: PresentationPart = { id: "alto", name: "Alto", displayOrder: 2, isAll: false };
+const tenor: PresentationPart = { id: "tenor", name: "Tenor", displayOrder: 3, isAll: false };
+const bass: PresentationPart = { id: "bass", name: "Bass", displayOrder: 4, isAll: false };
 
 const piece = {
   title: "Ode to Joy",
@@ -205,6 +205,7 @@ describe("attachment presentation", () => {
       attachment("general-score", "fullScore", { parts: [] }),
       attachment("general-text", "lyricsText", { parts: [], format: "other", originalExtension: "txt" }),
       attachment("unassigned-audio", "fullMix", { parts: [], format: "audio", originalExtension: "mp3" }),
+      attachment("editable-source", "editableFullScore", { parts: [], format: "musescore", originalExtension: "mscz" }),
     ];
 
     expect(filterAttachmentsForPart(files, "soprano").map((file) => file.id)).toEqual([
@@ -212,6 +213,8 @@ describe("attachment presentation", () => {
       "all",
       "general-score",
       "general-text",
+      "unassigned-audio",
+      "editable-source",
     ]);
     const model = createAttachmentPresentation({
       piece,

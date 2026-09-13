@@ -40,6 +40,11 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
       mimeType: "audio/mpeg",
       buffer: Buffer.from("test rehearsal audio"),
     },
+    {
+      name: `${title} cover.png`,
+      mimeType: "image/png",
+      buffer: Buffer.from("test image"),
+    },
   ]);
   await page.getByRole("button", { name: "Add" }).click();
   await expect(page.getByRole("heading", { name: "Add attachments" })).toBeVisible();
@@ -68,6 +73,7 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
   await expect(page.getByText(`${title} score.pdf — primary`)).toBeVisible();
   await expect(page.getByText(`${title}.mscz`)).toBeVisible();
   await expect(page.getByText(`${title} tenor.mp3`)).toBeVisible();
+  await expect(page.getByText(`${title} cover.png`)).toBeVisible();
 
   await page.goto("/library");
   await page.getByRole("link", { name: title }).click();
@@ -83,6 +89,9 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
   await expect(
     page.getByRole("link", { name: /Download .*Part Rehearsal - Tenor\.mp3/ }),
   ).toBeVisible();
+  await expect(page.locator("iframe[title^='Preview of']")).toBeVisible();
+  await expect(page.locator("audio")).toBeVisible();
+  await expect(page.getByRole("img", { name: /Preview of .*cover/i })).toBeVisible();
 
   await page.getByRole("button", { name: "Tenor" }).click();
   await expect(
@@ -90,5 +99,5 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: /Download .*Editable Full Score\.mscz/ }),
-  ).toHaveCount(0);
+  ).toBeVisible();
 });

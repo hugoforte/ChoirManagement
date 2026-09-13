@@ -130,7 +130,7 @@ function PieceDetailContent() {
       parts: voiceParts.map((part) => ({
         id: part._id,
         name: part.name,
-        order: part.displayOrder,
+        displayOrder: part.displayOrder,
         isAll: part.isAll,
       })),
       manualOrder: attachment.displayOrder,
