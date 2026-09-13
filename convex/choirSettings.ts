@@ -1,6 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireMember, requireCan } from "./lib/auth";
+import { normalizeOptionalText } from "./lib/text";
 import schema from "./schema";
 
 // Member-only, not public: nothing in the destination asks for choir
@@ -50,10 +51,15 @@ export const update = mutation({
     if (existing?.logoStorageId && args.logoStorageId && args.logoStorageId !== existing.logoStorageId) {
       await ctx.storage.delete(existing.logoStorageId);
     }
+    const fields = {
+      ...args,
+      description: normalizeOptionalText(args.description),
+      contactEmail: normalizeOptionalText(args.contactEmail),
+    };
     if (existing) {
-      await ctx.db.patch("choirSettings", existing._id, args);
+      await ctx.db.patch("choirSettings", existing._id, fields);
     } else {
-      await ctx.db.insert("choirSettings", args);
+      await ctx.db.insert("choirSettings", fields);
     }
     return null;
   },

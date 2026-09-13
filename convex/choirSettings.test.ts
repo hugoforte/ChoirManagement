@@ -44,6 +44,23 @@ test("update creates the singleton when none exists, get resolves it back", asyn
   });
 });
 
+test("update normalizes an empty string to undefined, actually clearing the field", async () => {
+  const t = convexTest(schema, modules);
+  await seedMember(t, adminIdentity, "admin");
+  const asAdmin = t.withIdentity(adminIdentity);
+
+  await asAdmin.mutation(api.choirSettings.update, {
+    name: "Choir",
+    description: "A friendly choir.",
+    contactEmail: "hello@example.com",
+  });
+  await asAdmin.mutation(api.choirSettings.update, { name: "Choir", description: "", contactEmail: "" });
+
+  const settings = await asAdmin.query(api.choirSettings.get, {});
+  expect(settings?.description).toBeUndefined();
+  expect(settings?.contactEmail).toBeUndefined();
+});
+
 test("update refuses a non-admin Member", async () => {
   const t = convexTest(schema, modules);
   await seedMember(t, memberIdentity, "director");

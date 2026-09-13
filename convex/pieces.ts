@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireMember, requireCan } from "./lib/auth";
+import { normalizeOptionalText } from "./lib/text";
 import schema from "./schema";
 
 const fileFields = schema.tables.pieces.validator.fields.files.element.fields;
@@ -66,15 +67,6 @@ export const create = mutation({
     return await ctx.db.insert("pieces", { ...args, files: [] });
   },
 });
-
-// "" normalizes to undefined here, not in the form handler that used to
-// repeat `field || undefined` before calling this — see events.ts's update
-// for why that has to happen after arguments arrive, not before they're
-// sent (an explicit undefined is dropped on the wire, indistinguishable
-// from the key being omitted; "" survives it fine).
-function normalizeOptionalText(value: string | undefined): string | undefined {
-  return value || undefined;
-}
 
 export const update = mutation({
   args: {

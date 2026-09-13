@@ -2,6 +2,7 @@ import { mutation, query, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { requireMember, requireCan } from "./lib/auth";
+import { normalizeOptionalText } from "./lib/text";
 import schema from "./schema";
 
 export const listUpcoming = query({
@@ -170,17 +171,6 @@ export const createDraft = mutation({
     });
   },
 });
-
-// Optional string fields normalize "" to undefined here, not in every form
-// handler that used to repeat `field || undefined` before calling this.
-// Doing it on the server (not the client) is what actually makes clearing
-// a field work: an explicit `undefined` sent from the client is dropped
-// before it reaches the handler — indistinguishable from the key being
-// omitted — but "" survives the wire fine, so the empty-string convention
-// has to be resolved after arguments arrive, not before they're sent.
-function normalizeOptionalText(value: string | undefined): string | undefined {
-  return value || undefined;
-}
 
 // Every field optional — omit whatever didn't change. handleToggleVisibility
 // used to re-send all seven fields just to flip one; now it sends one.

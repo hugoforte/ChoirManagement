@@ -40,8 +40,9 @@ function SettingsContent() {
     e.preventDefault();
     await update({
       name: fields.name,
-      description: fields.description || undefined,
-      contactEmail: fields.contactEmail || undefined,
+      // "" normalizes to undefined server-side now, not here.
+      description: fields.description,
+      contactEmail: fields.contactEmail,
       logoStorageId: settings?.logoStorageId,
     });
   }
@@ -54,8 +55,9 @@ function SettingsContent() {
     if (storageId === undefined) return; // upload's own error is already surfaced
     await update({
       name: fields.name,
-      description: fields.description || undefined,
-      contactEmail: fields.contactEmail || undefined,
+      // "" normalizes to undefined server-side now, not here.
+      description: fields.description,
+      contactEmail: fields.contactEmail,
       logoStorageId: storageId,
     });
   }
