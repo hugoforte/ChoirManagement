@@ -6,6 +6,7 @@ import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 
 import App from "./App";
+import { ErrorBoundary } from "./design/ErrorBoundary";
 import { ThemeProvider } from "./design/ThemeProvider";
 import "./index.css";
 
@@ -23,7 +24,9 @@ createRoot(document.getElementById("root")!).render(
       <ClerkProvider publishableKey={clerkPublishableKey}>
         <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
           <BrowserRouter>
-            <App />
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
           </BrowserRouter>
         </ConvexProviderWithClerk>
       </ClerkProvider>

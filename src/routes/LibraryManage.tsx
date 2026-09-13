@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
+import { useTrackedMutation } from "../lib/useTrackedMutation";
 import { MemberPage } from "../design/MemberPage";
 import { inputClass, primaryButtonClass, dangerLinkClass, cardClass } from "../design/forms";
 
@@ -31,20 +32,14 @@ export default function LibraryManage() {
 
 function LibraryManageContent() {
   const pieces = useQuery(api.pieces.list);
-  const createPiece = useMutation(api.pieces.create);
+  const { run: createPiece, pending: creating, error: createError } = useTrackedMutation(api.pieces.create);
   const [newTitle, setNewTitle] = useState("");
-  const [creating, setCreating] = useState(false);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    setCreating(true);
-    try {
-      await createPiece({ title: newTitle.trim() });
-      setNewTitle("");
-    } finally {
-      setCreating(false);
-    }
+    const id = await createPiece({ title: newTitle.trim() });
+    if (id !== undefined) setNewTitle("");
   }
 
   return (
@@ -61,6 +56,7 @@ function LibraryManageContent() {
           Add
         </button>
       </form>
+      {createError && <p className="mt-2 text-sm text-danger">{createError}</p>}
 
       {pieces === undefined ? (
         <p className="mt-4 text-sm text-stone-500 dark:text-stone-400">Loading…</p>
@@ -77,11 +73,11 @@ function LibraryManageContent() {
 
 function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
   const [expanded, setExpanded] = useState(false);
-  const updatePiece = useMutation(api.pieces.update);
-  const removePiece = useMutation(api.pieces.remove);
-  const generateUploadUrl = useMutation(api.pieces.generateUploadUrl);
-  const attachFile = useMutation(api.pieces.attachFile);
-  const detachFile = useMutation(api.pieces.detachFile);
+  const { run: updatePiece, pending: saving, error: saveError } = useTrackedMutation(api.pieces.update);
+  const { run: removePiece, error: removeError } = useTrackedMutation(api.pieces.remove);
+  const { run: generateUploadUrl, error: generateError } = useTrackedMutation(api.pieces.generateUploadUrl);
+  const { run: attachFile, error: attachError } = useTrackedMutation(api.pieces.attachFile);
+  const { run: detachFile, error: detachError } = useTrackedMutation(api.pieces.detachFile);
   const detail = useQuery(api.pieces.get, expanded ? { pieceId: piece._id } : "skip");
 
   const [fields, setFields] = useState({
@@ -92,6 +88,12 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
     youtubeUrl: piece.youtubeUrl ?? "",
   });
   const [uploading, setUploading] = useState(false);
+  // The raw fetch POST below isn't a Convex mutation, so useTrackedMutation
+  // can't wrap it — a dedicated upload seam is #32's job, which lands on
+  // top of this ticket's hook rather than duplicating it.
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const error = saveError ?? removeError ?? generateError ?? attachError ?? detachError ?? uploadError;
 
   async function handleSave() {
     await updatePiece({
@@ -113,8 +115,10 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
+    setUploadError(null);
     try {
       const uploadUrl = await generateUploadUrl();
+      if (uploadUrl === undefined) return; // generateUploadUrl's own error is already surfaced
       const res = await fetch(uploadUrl, {
         method: "POST",
         headers: { "Content-Type": file.type || "application/octet-stream" },
@@ -122,6 +126,8 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
       });
       const { storageId } = (await res.json()) as { storageId: Id<"_storage"> };
       await attachFile({ pieceId: piece._id, storageId, filename: file.name, kind: inferKind(file.name) });
+    } catch {
+      setUploadError("Upload failed. Please try again.");
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -175,9 +181,10 @@ function PieceManageRow({ piece }: { piece: Doc<"pieces"> }) {
             placeholder="YouTube reference link"
             className={inputClass}
           />
-          <button onClick={handleSave} className={primaryButtonClass}>
+          <button onClick={handleSave} disabled={saving} className={primaryButtonClass}>
             Save
           </button>
+          {error && <p className="text-sm text-danger">{error}</p>}
 
           <div className="mt-3 border-t border-stone-100 pt-3 dark:border-stone-800">
             <p className="text-sm font-medium">Files</p>

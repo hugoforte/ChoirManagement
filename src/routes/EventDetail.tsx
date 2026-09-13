@@ -1,9 +1,10 @@
 import { Link, useParams } from "react-router-dom";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
 import { can } from "../lib/roles";
+import { useTrackedMutation } from "../lib/useTrackedMutation";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { linkClass } from "../design/forms";
 import NotFound from "./NotFound";
@@ -17,7 +18,7 @@ export default function EventDetail() {
 function EventDetailContent({ viewer }: { viewer: Doc<"members"> }) {
   const { eventId } = useParams<{ eventId: string }>();
   const event = useQuery(api.events.get, { eventId: eventId as Id<"events"> });
-  const rsvp = useMutation(api.events.rsvp);
+  const { run: rsvp, pending: rsvpPending, error: rsvpError } = useTrackedMutation(api.events.rsvp);
   const roster = useQuery(api.events.roster, can(viewer, "manageEvents") ? { eventId: eventId as Id<"events"> } : "skip");
   usePageTitle(event?.title);
 
@@ -49,8 +50,9 @@ function EventDetailContent({ viewer }: { viewer: Doc<"members"> }) {
               <button
                 key={status}
                 onClick={() => rsvp({ eventId: event._id, status })}
+                disabled={rsvpPending}
                 aria-pressed={event.myRsvp === status}
-                className={`rounded-lg px-3 py-1 text-sm capitalize ${
+                className={`rounded-lg px-3 py-1 text-sm capitalize disabled:opacity-50 ${
                   event.myRsvp === status
                     ? "bg-brand-600 text-white"
                     : "border border-stone-300 text-stone-700 hover:bg-stone-50 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
@@ -60,6 +62,7 @@ function EventDetailContent({ viewer }: { viewer: Doc<"members"> }) {
               </button>
             ))}
           </div>
+          {rsvpError && <p className="mt-2 text-sm text-danger">{rsvpError}</p>}
 
           {event.setlist.length > 0 && (
             <>
