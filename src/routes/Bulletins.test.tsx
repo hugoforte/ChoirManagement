@@ -175,7 +175,9 @@ describe("Bulletins", () => {
 
     const markRead = spyFor(api.bulletins.markBulletinsRead);
     expect(markRead).toHaveBeenCalledTimes(1);
-    expect(markRead).toHaveBeenCalledWith({ now: expect.any(Number) });
+    // No timestamp from the client: the mutation reads the clock server-side,
+    // where the publishedAt it gets compared against was stamped.
+    expect(markRead).toHaveBeenCalledWith({});
   });
 
   test("offers no Load more once the archive is exhausted", () => {

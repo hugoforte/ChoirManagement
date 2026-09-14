@@ -44,8 +44,11 @@ export default function App() {
       <Route path="/bulletins" element={<Bulletins />} />
       <Route path="/bulletins/manage" element={<BulletinsManage />} />
       <Route path="/bulletins/manage/:bulletinId" element={<BulletinManageDetail />} />
-      {/* After the two /bulletins/manage paths, so "manage" is never read as a
-          Bulletin id — the same ordering as /events and /library above. */}
+      {/* /bulletins/manage wins over this because React Router ranks a static
+          segment above a dynamic one, not because of where it is declared —
+          "manage" can never be read as a Bulletin id. Listed after its manage
+          paths anyway, matching /events and /library above, so the file reads
+          in the order a person would expect it to resolve. */}
       <Route path="/bulletins/:bulletinId" element={<BulletinDetail />} />
       <Route path="/polls" element={<Polls />} />
       <Route path="/polls/manage" element={<PollsManage />} />

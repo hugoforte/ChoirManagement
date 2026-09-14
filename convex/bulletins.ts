@@ -1,8 +1,12 @@
-// Authoring a Bulletin: draft, publish, edit, delete (#80, part of #49).
-// Reading — the Member-facing archive, Remarks, Share Links — lands in the
-// sibling slices. Everything above the "Member-facing read side" divider
-// requires `manageBulletins`; below it, `requireMember` — and nothing below
-// the divider ever returns a draft.
+// Everything a Bulletin is read or written through, split at the
+// "Member-facing read side" divider below (part of #49).
+//
+// Above it: authoring — draft, publish, edit, delete — all gated on
+// `manageBulletins`, and the only place a draft is ever returned.
+// Below it: the Member-facing archive and reading view, gated on
+// `requireMember`, where a draft is invisible to every Role.
+//
+// Remarks (#81) and Share Links (#83) live in their own modules.
 import { mutation, query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
@@ -72,8 +76,8 @@ export const listAll = query({
 });
 
 // The editor's own read. Returns drafts, so it carries the same gate as
-// listAll rather than requireMember — #82 adds the Member-facing read of a
-// *published* Bulletin separately.
+// listAll rather than requireMember. `getPublished` below is the read every
+// other Member makes, and it refuses a draft whoever is asking.
 export const get = query({
   args: { bulletinId: v.id("bulletins") },
   returns: v.union(v.null(), schema.doc("bulletins")),
@@ -296,15 +300,20 @@ export const hasUnread = query({
   },
 });
 
-// Called on mount by the archive route, which passes its own Date.now():
-// "read up to the moment you opened the list", and a mutation rather than a
-// query because a query must neither write nor read the clock.
+// Called on mount by the archive route. The clock is read here rather than
+// passed in: this timestamp is only ever compared against publishedAt, which
+// `publish` stamps server-side, so taking it from the browser would mis-read
+// the unread marker on any device whose clock runs fast or slow — and would
+// let a client write an arbitrary instant into its own Member row. A mutation
+// rather than a query because a query may neither write nor read the clock;
+// that ban doesn't extend to mutations, and the other writers in this file
+// call Date.now() the same way.
 export const markBulletinsRead = mutation({
-  args: { now: v.number() },
+  args: {},
   returns: v.null(),
-  handler: async (ctx, { now }) => {
+  handler: async (ctx) => {
     const member = await requireMember(ctx);
-    await ctx.db.patch("members", member._id, { lastReadBulletinsAt: now });
+    await ctx.db.patch("members", member._id, { lastReadBulletinsAt: Date.now() });
     return null;
   },
 });

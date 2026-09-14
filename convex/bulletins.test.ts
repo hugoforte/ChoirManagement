@@ -478,12 +478,13 @@ test("hasUnread is false when nothing is published, however old the draft", asyn
 test("markBulletinsRead advances the caller's own timestamp and nobody else's", async () => {
   const t = convexTest(schema, modules);
   const { choristerId, directorId } = await seedMembers(t);
+  const before = Date.now();
 
-  await t.withIdentity(choristerIdentity).mutation(api.bulletins.markBulletinsRead, { now: 4_000 });
+  await t.withIdentity(choristerIdentity).mutation(api.bulletins.markBulletinsRead, {});
 
   const chorister = await t.run(async (ctx) => await ctx.db.get("members", choristerId));
   const director = await t.run(async (ctx) => await ctx.db.get("members", directorId));
-  expect(chorister?.lastReadBulletinsAt).toBe(4_000);
+  expect(chorister?.lastReadBulletinsAt).toBeGreaterThanOrEqual(before);
   expect(director?.lastReadBulletinsAt).toBeUndefined();
 });
 
@@ -494,7 +495,7 @@ test("markBulletinsRead clears the unread marker", async () => {
   const asChorister = t.withIdentity(choristerIdentity);
   expect(await asChorister.query(api.bulletins.hasUnread, {})).toBe(true);
 
-  await asChorister.mutation(api.bulletins.markBulletinsRead, { now: 3_000 });
+  await asChorister.mutation(api.bulletins.markBulletinsRead, {});
 
   expect(await asChorister.query(api.bulletins.hasUnread, {})).toBe(false);
 });

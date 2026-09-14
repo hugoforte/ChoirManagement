@@ -31,10 +31,11 @@ function BulletinsContent({ viewer }: { viewer: Doc<"members"> }) {
   const markBulletinsRead = useMutation(api.bulletins.markBulletinsRead);
 
   // Opening the list is what clears the nav's unread indicator (#49). Once,
-  // on mount, and with the client's own clock: the marker records when this
-  // Member looked, so it must not re-fire as later pages load.
+  // on mount: the marker records that this Member looked, so it must not
+  // re-fire as later pages load. The timestamp itself is the server's, since
+  // it is compared against a server-stamped publishedAt.
   useEffect(() => {
-    void markBulletinsRead({ now: Date.now() });
+    void markBulletinsRead({});
   }, [markBulletinsRead]);
 
   return (
