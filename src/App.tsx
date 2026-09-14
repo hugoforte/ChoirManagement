@@ -15,6 +15,7 @@ import Bulletins from "./routes/Bulletins";
 import BulletinsManage from "./routes/BulletinsManage";
 import BulletinManageDetail from "./routes/BulletinManageDetail";
 import Polls from "./routes/Polls";
+import PollDetail from "./routes/PollDetail";
 import PollsManage from "./routes/PollsManage";
 import PollManageDetail from "./routes/PollManageDetail";
 import Members from "./routes/Members";
@@ -42,6 +43,7 @@ export default function App() {
       <Route path="/polls" element={<Polls />} />
       <Route path="/polls/manage" element={<PollsManage />} />
       <Route path="/polls/manage/:pollId" element={<PollManageDetail />} />
+      <Route path="/polls/:pollId" element={<PollDetail />} />
       <Route path="/members" element={<Members />} />
       <Route path="/members/manage" element={<MembersManage />} />
       <Route path="/settings" element={<Settings />} />

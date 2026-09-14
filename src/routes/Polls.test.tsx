@@ -30,6 +30,25 @@ vi.mock("@clerk/clerk-react", async (importOriginal) => {
 
 vi.mock("convex/react", () => ({ useQuery: vi.fn(), useMutation: vi.fn() }));
 
+const MARCH_1 = new Date(2026, 2, 1).getTime();
+
+const openPolls: Doc<"polls">[] = [
+  {
+    _id: "poll_1" as Doc<"polls">["_id"],
+    _creationTime: 0,
+    title: "Spring Concert",
+    description: undefined,
+    location: undefined,
+    status: "open",
+    deadlineAt: MARCH_1,
+    winningCandidateDateId: undefined,
+    resultingEventId: undefined,
+    updatedAt: 0,
+    createdByMemberId: "member_1" as Doc<"members">["_id"],
+    updatedByMemberId: undefined,
+  },
+];
+
 function renderAs(role: Doc<"members">["role"]) {
   const viewer: Doc<"members"> = {
     _id: "member_1" as Doc<"members">["_id"],
@@ -45,6 +64,7 @@ function renderAs(role: Doc<"members">["role"]) {
     const name = getFunctionName(query);
     if (name === getFunctionName(api.members.viewer)) return viewer;
     if (name === getFunctionName(api.choirSettings.get)) return { name: "Riverside Choir", logoUrl: null };
+    if (name === getFunctionName(api.polls.listOpen)) return openPolls;
     throw new Error(`Unexpected useQuery call: ${name}`);
   }) as typeof useQuery);
 
@@ -80,6 +100,12 @@ describe("Polls", () => {
     renderAs("chorister");
 
     expect(screen.queryByRole("link", { name: "Manage" })).not.toBeInTheDocument();
+  });
+
+  test("links a Chorister from an open Poll to its availability grid", () => {
+    renderAs("chorister");
+
+    expect(screen.getByRole("link", { name: "Spring Concert" })).toHaveAttribute("href", "/polls/poll_1");
   });
 
   test("gives every Member a Polls entry in the primary nav", () => {

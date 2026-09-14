@@ -47,6 +47,17 @@ async function touchPoll(ctx: MutationCtx, pollId: Id<"polls">, memberId: Id<"me
   await ctx.db.patch("polls", pollId, { updatedAt: Date.now(), updatedByMemberId: memberId });
 }
 
+// The open half of both list surfaces: `list` (manager-gated, with the
+// closed history after it) and `listOpen` (every Member). One definition so
+// the two can't drift on ordering or bound.
+async function openPollsNewestFirst(ctx: QueryCtx | MutationCtx) {
+  return await ctx.db
+    .query("polls")
+    .withIndex("by_status", (q) => q.eq("status", "open"))
+    .order("desc")
+    .take(200);
+}
+
 async function candidateDatesInOrder(ctx: QueryCtx | MutationCtx, pollId: Id<"polls">) {
   // Bounded by one Poll's own authoring — a handful of dates, the same
   // shape as events.roster collecting one Event's RSVPs.
@@ -248,16 +259,153 @@ export const list = query({
   returns: v.array(schema.doc("polls")),
   handler: async (ctx) => {
     await requireCan(ctx, "managePolls");
-    const open = await ctx.db
-      .query("polls")
-      .withIndex("by_status", (q) => q.eq("status", "open"))
-      .order("desc")
-      .take(200);
+    const open = await openPollsNewestFirst(ctx);
     const closed = await ctx.db
       .query("polls")
       .withIndex("by_status", (q) => q.eq("status", "closed"))
       .order("desc")
       .take(200);
     return [...open, ...closed];
+  },
+});
+
+const availabilityValue = schema.tables.availabilities.validator.fields.value;
+
+// `if_needed` keeps the schema's own spelling rather than being camelCased
+// at this boundary, so a tally is incremented by `tally[value]` straight
+// from an Availability's value with no mapping table in between.
+//
+// Every value gets its own count, plus the Members who haven't answered —
+// the most useful number on the grid (#9), and the reason guest responses
+// are excluded. `if_needed` is never folded into `unavailable`.
+const availabilityTally = v.object({
+  available: v.number(),
+  unavailable: v.number(),
+  if_needed: v.number(),
+  notAnswered: v.number(),
+});
+
+// requireMember, not requireCan: responding is what every Member does, and
+// managePolls is what a Director needs to *author* the Poll (#9). The
+// Member is taken from the caller's identity, never from an argument.
+//
+// Deliberately does not touchPoll: answering a Poll is not editing it, and
+// stamping updatedByMemberId on every response would rewrite the audit
+// trail #84 keeps for the Director who owns the Poll's contents.
+export const setAvailability = mutation({
+  args: {
+    candidateDateId: v.id("candidateDates"),
+    value: availabilityValue,
+  },
+  returns: v.null(),
+  handler: async (ctx, { candidateDateId, value }) => {
+    const member = await requireMember(ctx);
+    const candidateDate = await ctx.db.get("candidateDates", candidateDateId);
+    if (!candidateDate) throw new Error("Candidate Date not found");
+    await requireOpenPoll(ctx, candidateDate.pollId);
+
+    // One Availability per Member per Candidate Date, upserted on the
+    // compound index — the same lookup-then-patch shape events.rsvp uses,
+    // because Convex doesn't enforce uniqueness itself.
+    const existing = await ctx.db
+      .query("availabilities")
+      .withIndex("by_candidate_date_id_and_member_id", (q) =>
+        q.eq("candidateDateId", candidateDateId).eq("memberId", member._id),
+      )
+      .unique();
+    if (existing) {
+      await ctx.db.patch("availabilities", existing._id, { value });
+    } else {
+      await ctx.db.insert("availabilities", { candidateDateId, memberId: member._id, value });
+    }
+    return null;
+  },
+});
+
+// The whole named grid in one subscription: every Member as a row, every
+// Candidate Date as a column, and a null wherever a Member hasn't answered
+// yet. Open to every signed-in Member while the Poll runs (#9) — seeing the
+// gaps is what makes a Poll self-policing.
+//
+// `values` and `tallies` are positional: index i of both lines up with
+// index i of `candidateDates`, so the client renders columns without
+// looking anything up by id.
+export const getGrid = query({
+  args: { pollId: v.id("polls") },
+  returns: v.union(
+    v.null(),
+    v.object({
+      poll: schema.doc("polls"),
+      candidateDates: v.array(schema.doc("candidateDates")),
+      rows: v.array(
+        v.object({
+          memberId: v.id("members"),
+          name: v.string(),
+          isViewer: v.boolean(),
+          values: v.array(v.union(availabilityValue, v.null())),
+        }),
+      ),
+      tallies: v.array(availabilityTally),
+    }),
+  ),
+  handler: async (ctx, { pollId }) => {
+    const viewer = await requireMember(ctx);
+    const poll = await ctx.db.get("polls", pollId);
+    if (!poll) return null;
+
+    const candidateDates = await candidateDatesInOrder(ctx, pollId);
+    // Members once and Availabilities once per Candidate Date, joined in
+    // memory: a lookup per Member per date would be Members × dates reads
+    // for the same rows. The roster is bounded the way members.list's is.
+    const [members, answersPerDate] = await Promise.all([
+      ctx.db.query("members").collect(),
+      Promise.all(
+        candidateDates.map((candidateDate) =>
+          ctx.db
+            .query("availabilities")
+            .withIndex("by_candidate_date_id", (q) => q.eq("candidateDateId", candidateDate._id))
+            .collect(),
+        ),
+      ),
+    ]);
+
+    const answersByDate = answersPerDate.map(
+      (answers) => new Map<Id<"members">, (typeof answers)[number]["value"]>(answers.map((a) => [a.memberId, a.value])),
+    );
+
+    const rows = members
+      .map((member) => ({
+        memberId: member._id,
+        name: member.name,
+        isViewer: member._id === viewer._id,
+        values: answersByDate.map((byMember) => byMember.get(member._id) ?? null),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Counted off the rows rather than the raw Availabilities, so an answer
+    // left behind by a deleted Member can't inflate a column.
+    const tallies = candidateDates.map((_, column) => {
+      const tally = { available: 0, unavailable: 0, if_needed: 0, notAnswered: 0 };
+      for (const row of rows) {
+        const value = row.values[column];
+        if (value === null) tally.notAnswered += 1;
+        else tally[value] += 1;
+      }
+      return tally;
+    });
+
+    return { poll, candidateDates, rows, tallies };
+  },
+});
+
+// The Member-facing half of `list`: open Polls only, newest first, for the
+// /polls page's way into each grid. #88 owns the full list with its closed
+// history.
+export const listOpen = query({
+  args: {},
+  returns: v.array(schema.doc("polls")),
+  handler: async (ctx) => {
+    await requireMember(ctx);
+    return await openPollsNewestFirst(ctx);
   },
 });
