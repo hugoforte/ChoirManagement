@@ -182,12 +182,18 @@ test("an edit after publishing bumps updatedAt but leaves publishedAt alone", as
   // "edited" badge (updatedAt > publishedAt) must not show yet.
   expect(atPublish?.updatedAt).toBe(atPublish?.publishedAt);
 
-  await t.run(async (ctx) => await ctx.db.patch("bulletins", bulletinId, { updatedAt: 1 }));
+  // Both instants are pinned into the past before the edit. update() stamps
+  // updatedAt with Date.now(), and on a fast machine publishing and editing
+  // land in the same millisecond — comparing the edit against the real
+  // publish time made this assertion race the clock rather than test the
+  // rule. publishedAt staying at 1 is still exactly the claim: an edit must
+  // never re-stamp it.
+  await t.run(async (ctx) => await ctx.db.patch("bulletins", bulletinId, { publishedAt: 1, updatedAt: 1 }));
   await asDirector.mutation(api.bulletins.update, { bulletinId, body: "Call time is 6:45." });
 
   const edited = await t.run(async (ctx) => await ctx.db.get("bulletins", bulletinId));
-  expect(edited?.publishedAt).toBe(atPublish?.publishedAt);
-  expect(edited?.updatedAt).toBeGreaterThan(atPublish!.publishedAt!);
+  expect(edited?.publishedAt).toBe(1);
+  expect(edited?.updatedAt).toBeGreaterThan(1);
   expect(edited?.status).toBe("published");
 });
 
