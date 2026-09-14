@@ -101,7 +101,7 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
   await expect(page.getByLabel("Playback position")).toBeVisible();
   await expect(page.locator("img[alt^='Preview of']")).toBeVisible();
 
-  await page.getByRole("button", { name: "Tenor" }).click();
+  await page.getByRole("button", { name: "Tenor", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "Part Rehearsal · Tenor" })).toBeChecked();
   await expect(
     page.getByRole("button", { name: /Download .*Editable Full Score\.mscz/ }),
