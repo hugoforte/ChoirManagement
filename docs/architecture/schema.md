@@ -26,6 +26,34 @@ Convex doesn't enforce unique indexes. "One RSVP per Member per Event" is a writ
 
 `name` and `email` on `members` are copies populated at create-on-first-login (per `docs/research/convex-clerk-integration-pattern.md`), kept fresh by an optional webhook sync — not fetched from Clerk on every read. Clerk remains the source of truth; these fields exist so Convex queries (e.g. "list Members") don't need a round-trip to Clerk's API.
 
+## Bulletins and Polls (#79)
+
+`bulletins`, `bulletinRemarks`, `polls`, `candidateDates` and `availabilities` all landed in one deliberately thin slice, ahead of any query, mutation or UI. Both [#49](https://github.com/hugoforte/ChoirManagement/issues/49) and [#9](https://github.com/hugoforte/ChoirManagement/issues/9) need this file, and they are meant to run as parallel workstreams — landing the tables once, up front, is what stops two agents colliding here on day one. See [`bulletins-and-polls-orchestration.md`](./bulletins-and-polls-orchestration.md).
+
+### A Bulletin has no visibility field
+
+`events.visibility` is not extended to Bulletins. A Bulletin is Members-only content, and the need it actually has is "forward this week's notes to a guest conductor" — a per-recipient act, not a publication. That is served by `shareToken`/`shareMode`, where token mode grants unauthenticated read of that one Bulletin and nothing else (ADR-0004). A second public content surface would have had to be kept out of search engines and out of the public Events listing, which is more machinery than a token. As with `events.visibility`, none of this is enforced by the schema: a token read is safe only because of which function serves it.
+
+### One `updatedAt`, not a separate "edited" timestamp
+
+#49 asks a published Bulletin to show an "edited" timestamp alongside its published date. That is `updatedAt` compared against `publishedAt`, not a second `lastEditedAt` field saying the same thing in different words. `publishedAt` is the field that is genuinely write-once: it is set on first publish and never cleared, because there is no un-publish, and its absence is what makes a Bulletin a draft.
+
+### A Remark names its Piece, not a Setlist position
+
+`bulletinRemarks.pieceId` points at the Piece directly. A Setlist position would only exist for a Bulletin anchored to an Event, and an anchor is optional. Naming the Piece is also what makes the reverse lookup possible — `by_piece_id` is how Piece detail shows recent Remarks about the Piece a chorister is practising, with the caller filtering to published Bulletins.
+
+### A Poll precedes its Event (ADR-0005)
+
+`polls` carries *draft* Event metadata (title, description, location) rather than Events gaining a `proposed` status with an optional `startsAt`. Making `startsAt` optional would have rippled through every Events query and the public website in order to serve a feature that touches Events exactly once — the insert on promotion, recorded in `polls.resultingEventId`. `candidateDates.startsAt`/`endsAt` are represented identically to `events.startsAt` so that promotion is a straight copy. That assumes one Choir in one local time zone: a date-only Candidate Date stores local midnight, which is right for everyone in that zone and subtly wrong for a Member answering from another continent. Accepted knowingly.
+
+### Availability uniqueness, the same shape as RSVP
+
+"One Availability per Member per Candidate Date" is a write-time invariant, not a schema constraint — Convex has no unique indexes. `by_candidate_date_id_and_member_id` exists to be read before an insert so the mutation can patch instead, exactly as `by_event_and_member` works for `rsvps`. The resemblance stops there: an Availability is a hypothetical about an unchosen date and is never copied into an `rsvps` row when a Poll produces an Event.
+
+### The unread marker is one field on `members`
+
+`members.lastReadBulletinsAt` is optional and is the whole notification model: the Bulletins nav entry compares it against the newest `publishedAt`, and opening the list advances it. No notification table, no feed, no per-Bulletin read receipts — building a general notification model from this one caller's perspective would get it wrong, and #57 keeps that job.
+
 ## Also updated
 
 Added **Setlist** and **Visibility** to `CONTEXT.md` — both terms were already in use across tickets/comments but had never been formalized in the glossary.

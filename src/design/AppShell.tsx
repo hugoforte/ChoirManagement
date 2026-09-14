@@ -10,6 +10,8 @@ import { ThemeToggle } from "./ThemeToggle";
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" },
   { to: "/events", label: "Events", icon: "M4 5h16M4 11h16M4 17h10" },
+  { to: "/bulletins", label: "Bulletins", icon: "M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h4" },
+  { to: "/polls", label: "Polls", icon: "M5 20V9M12 20V4M19 20v-7" },
   { to: "/library", label: "Library", icon: "M5 4h10a2 2 0 012 2v14l-7-3-7 3V6a2 2 0 012-2z" },
   { to: "/members", label: "Roster", icon: "M12 12a4 4 0 100-8 4 4 0 000 8zM4 20c0-4 4-6 8-6s8 2 8 6" },
 ];

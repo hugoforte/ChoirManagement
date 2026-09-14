@@ -37,6 +37,10 @@ export default defineSchema({
       v.literal("director"),
       v.literal("chorister"),
     ),
+    // Advances when the Member opens the Bulletins list; the Bulletins nav
+    // entry compares it against the newest publishedAt to show an unread
+    // indicator (#49). Absent until the Member first opens that list.
+    lastReadBulletinsAt: v.optional(v.number()),
   })
     .index("by_clerk_user_id", ["clerkUserId"])
     .index("by_email", ["email"]),
@@ -174,4 +178,113 @@ export default defineSchema({
     // One RSVP per Member per Event — look this up before insert to decide
     // insert-vs-patch; Convex doesn't enforce uniqueness itself.
     .index("by_event_and_member", ["eventId", "memberId"]),
+
+  // A Director-authored post to the whole Choir (#49), Markdown in `body`
+  // and rendered client-side. Members-only content with deliberately no
+  // public/private visibility — that concept stays specific to Events, and
+  // guest reading happens through a Share Link token instead (ADR-0004).
+  bulletins: defineTable({
+    title: v.string(),
+    // Markdown source. Rendered client-side; raw HTML must not be honoured.
+    body: v.string(),
+    // At most one Event anchor, optional: a standalone announcement is an
+    // equally valid Bulletin. One Event may accumulate several Bulletins.
+    eventId: v.optional(v.id("events")),
+    status: v.union(v.literal("draft"), v.literal("published")),
+    // Set once, on first publish, and never cleared — there is no
+    // un-publish. Absent means the Bulletin is still a draft.
+    publishedAt: v.optional(v.number()),
+    // Doubles as the "edited" timestamp #49 asks for: a published Bulletin
+    // shows this alongside publishedAt when it is the later of the two.
+    // One field rather than a separate lastEditedAt saying the same thing.
+    updatedAt: v.number(),
+    createdByMemberId: v.id("members"),
+    updatedByMemberId: v.optional(v.id("members")),
+    // At most one Share Link per Bulletin (ADR-0004). The token is a bearer
+    // credential granting read of this one Bulletin; regenerating it revokes
+    // the previous URL. Absent until a Share Link is issued.
+    shareToken: v.optional(v.string()),
+    shareMode: v.optional(
+      v.union(v.literal("sign_in_required"), v.literal("token")),
+    ),
+  })
+    // The archive read: published Bulletins, newest first.
+    .index("by_status_and_published_at", ["status", "publishedAt"])
+    .index("by_event_id", ["eventId"])
+    // Resolves a token Share Link to its one Bulletin (ADR-0004).
+    .index("by_share_token", ["shareToken"]),
+
+  // A comment about one Piece carried inside a Bulletin (#49). Owned by its
+  // Bulletin: publishing, editing and deleting cascade from there. Names its
+  // Piece directly rather than a Setlist position, so a Remark still works
+  // in a Bulletin with no Event behind it.
+  bulletinRemarks: defineTable({
+    bulletinId: v.id("bulletins"),
+    pieceId: v.id("pieces"),
+    text: v.string(),
+    displayOrder: v.number(),
+  })
+    .index("by_bulletin_id_and_display_order", ["bulletinId", "displayOrder"])
+    // The Piece reverse lookup: Piece detail lists recent Remarks about that
+    // Piece, newest first, filtered to published Bulletins by the caller.
+    .index("by_piece_id", ["pieceId"]),
+
+  // A request for the Choir's Availability across several Candidate Dates,
+  // used to settle on a date before an Event exists (#9). Carries *draft*
+  // Event metadata rather than being a proposed Event, so every row in
+  // `events` still has a real startsAt — see ADR-0005.
+  polls: defineTable({
+    title: v.string(),
+    description: v.optional(v.string()),
+    location: v.optional(v.string()),
+    status: v.union(v.literal("open"), v.literal("closed")),
+    // Advisory only: a deadline passing never auto-closes a Poll.
+    deadlineAt: v.optional(v.number()),
+    // Set when the Poll closes on a winner. A Poll may also close with no
+    // winner, in which case both this and resultingEventId stay absent.
+    winningCandidateDateId: v.optional(v.id("candidateDates")),
+    // The Event this Poll produced on close. That insert is the single
+    // point at which Poll code touches Events code (ADR-0005).
+    resultingEventId: v.optional(v.id("events")),
+    updatedAt: v.number(),
+    createdByMemberId: v.id("members"),
+    updatedByMemberId: v.optional(v.id("members")),
+  })
+    // Open Polls, then closed ones as history; newest first within each, on
+    // the _creationTime Convex appends to every index.
+    .index("by_status", ["status"]),
+
+  // One proposed option within a Poll (#9). Represented identically to
+  // events.startsAt so that promotion is a straight copy. Assumes one Choir
+  // in one local time zone — a date-only Candidate Date stores local
+  // midnight, knowingly wrong for a Member answering from another continent.
+  candidateDates: defineTable({
+    pollId: v.id("polls"),
+    startsAt: v.number(), // ms epoch
+    endsAt: v.optional(v.number()), // ms epoch, giving a time window
+    displayOrder: v.number(),
+  }).index("by_poll_id_and_display_order", ["pollId", "displayOrder"]),
+
+  // A Member's answer about one Candidate Date (#9). `if_needed` is kept
+  // distinct because collapsing it into "no" destroys exactly the
+  // information a Director needs to break a tie. An Availability is a
+  // hypothetical and is never copied into an `rsvps` row (ADR-0005).
+  availabilities: defineTable({
+    candidateDateId: v.id("candidateDates"),
+    memberId: v.id("members"),
+    value: v.union(
+      v.literal("available"),
+      v.literal("unavailable"),
+      v.literal("if_needed"),
+    ),
+  })
+    .index("by_candidate_date_id", ["candidateDateId"])
+    .index("by_member_id", ["memberId"])
+    // One Availability per Member per Candidate Date — look this up before
+    // insert to decide insert-vs-patch; Convex doesn't enforce uniqueness
+    // itself, same as rsvps above.
+    .index("by_candidate_date_id_and_member_id", [
+      "candidateDateId",
+      "memberId",
+    ]),
 });
