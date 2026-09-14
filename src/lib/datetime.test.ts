@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   formatCandidateDate,
+  formatTimestamp,
   fromDateInput,
   fromDateInputEndOfDay,
   toDateInput,
@@ -80,5 +81,12 @@ describe("formatCandidateDate", () => {
     expect(
       formatCandidateDate(fromDateInput("2026-03-01", "22:00"), fromDateInput("2026-03-02", "01:00")),
     ).toBe("2026-03-01 22:00–2026-03-02 01:00");
+  });
+});
+
+describe("formatTimestamp", () => {
+  test("separates date and time with a space rather than the input format's T", () => {
+    const ms = new Date(2026, 0, 5, 9, 3).getTime();
+    expect(formatTimestamp(ms)).toBe("2026-01-05 09:03");
   });
 });

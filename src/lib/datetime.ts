@@ -57,3 +57,11 @@ export function formatCandidateDate(startsAt: number, endsAt?: number): string {
   const end = endDate === date ? toTimeInput(endsAt) : `${endDate} ${toTimeInput(endsAt)}`;
   return `${date} ${start}–${end}`;
 }
+
+// The same instant for reading rather than for a datetime-local input: a
+// space instead of the "T" the input format requires. EventsManage.tsx
+// spelled this as `.replace("T", " ")` at its one call site; the Bulletins
+// manage list and editor made it three, so it gets a name.
+export function formatTimestamp(ms: number): string {
+  return toDatetimeLocal(ms).replace("T", " ");
+}
