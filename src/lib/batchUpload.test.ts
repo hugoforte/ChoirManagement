@@ -3,6 +3,7 @@ import { webcrypto } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   BatchUploadManager,
+  calculateSha256,
   DEFAULT_LARGE_FILE_WARNING_BYTES,
   type StorageId,
   type UploadTransport,
@@ -78,6 +79,7 @@ class ControlledTransport implements UploadTransport {
 function file(name: string, contents = "hello"): File {
   const testFile = new File([contents], name, { type: "application/octet-stream" });
   Object.defineProperty(testFile, "arrayBuffer", {
+    configurable: true,
     value: async () => new TextEncoder().encode(contents).buffer,
   });
   return testFile;
@@ -88,6 +90,22 @@ async function expectComplete(manager: BatchUploadManager): Promise<void> {
 }
 
 describe("BatchUploadManager", () => {
+  it("falls back when a dropped file cannot be read through arrayBuffer", async () => {
+    const dropped = file("dropped.pdf");
+    Object.defineProperty(dropped, "arrayBuffer", {
+      value: vi.fn().mockRejectedValue(
+        new DOMException(
+          "The requested file could not be read, typically due to permission problems that have occurred after a reference to a file was acquired.",
+          "NotReadableError",
+        ),
+      ),
+    });
+
+    await expect(calculateSha256(dropped)).resolves.toBe(
+      "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+    );
+  });
+
   it("limits the transport to three active uploads and reports byte progress", async () => {
     const transport = new ControlledTransport();
     const manager = new BatchUploadManager({ transport });

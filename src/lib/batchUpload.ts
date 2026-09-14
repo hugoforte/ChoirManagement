@@ -95,22 +95,36 @@ export function createAbortError(): DOMException {
   return new DOMException("Upload cancelled", "AbortError");
 }
 
+function readFileWithFileReader(file: File): Promise<ArrayBuffer> {
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (reader.result instanceof ArrayBuffer) resolve(reader.result);
+      else reject(new Error("Could not read file bytes for hashing"));
+    });
+    reader.addEventListener("error", () =>
+      reject(reader.error ?? new Error("Could not read file bytes for hashing")),
+    );
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 /** Calculate the browser's canonical lowercase SHA-256 hex digest. */
 export async function calculateSha256(file: File): Promise<string> {
-  const bytes =
-    typeof file.arrayBuffer === "function"
-      ? await file.arrayBuffer()
-      : await new Promise<ArrayBuffer>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.addEventListener("load", () => {
-            if (reader.result instanceof ArrayBuffer) resolve(reader.result);
-            else reject(new Error("Could not read file bytes for hashing"));
-          });
-          reader.addEventListener("error", () =>
-            reject(reader.error ?? new Error("Could not read file bytes for hashing")),
-          );
-          reader.readAsArrayBuffer(file);
-        });
+  let bytes: ArrayBuffer;
+  if (typeof file.arrayBuffer !== "function") {
+    bytes = await readFileWithFileReader(file);
+  } else {
+    try {
+      bytes = await file.arrayBuffer();
+    } catch (arrayBufferError) {
+      try {
+        bytes = await readFileWithFileReader(file);
+      } catch {
+        throw arrayBufferError;
+      }
+    }
+  }
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
