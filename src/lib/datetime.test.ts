@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   formatCandidateDate,
   fromDateInput,
+  fromDateInputEndOfDay,
   toDateInput,
   toDatetimeLocal,
   toTimeInput,
@@ -43,6 +44,20 @@ describe("fromDateInput", () => {
   test("round-trips through toDateInput and toTimeInput", () => {
     const ms = new Date(2026, 2, 1, 19, 30).getTime();
     expect(fromDateInput(toDateInput(ms), toTimeInput(ms))).toBe(ms);
+  });
+});
+
+describe("fromDateInputEndOfDay", () => {
+  test("a deadline covers the whole chosen day, not just its first instant", () => {
+    expect(fromDateInputEndOfDay("2026-03-01")).toBe(new Date(2026, 2, 1, 23, 59, 59, 999).getTime());
+  });
+
+  test("still reads back as the date the Director picked", () => {
+    expect(toDateInput(fromDateInputEndOfDay("2026-03-01"))).toBe("2026-03-01");
+  });
+
+  test("is later than the same day's Candidate Date midnight", () => {
+    expect(fromDateInputEndOfDay("2026-03-01")).toBeGreaterThan(fromDateInput("2026-03-01"));
   });
 });
 

@@ -9,7 +9,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
 import { useTrackedMutation } from "../lib/useTrackedMutation";
-import { formatCandidateDate, fromDateInput, toDateInput } from "../lib/datetime";
+import { formatCandidateDate, fromDateInputEndOfDay, toDateInput } from "../lib/datetime";
 import { moveItem } from "../lib/reorder";
 import {
   emptyCandidateDate,
@@ -23,6 +23,9 @@ import { dangerLinkClass, inputClass, labelClass, primaryButtonClass } from "../
 import NotFound from "./NotFound";
 
 const hintClass = "mt-1 text-xs text-stone-500 dark:text-stone-400";
+
+// Which of the four mutations on this page owns the error slot.
+type PollAction = "save" | "add" | "remove" | "reorder";
 
 export default function PollManageDetail() {
   return (
@@ -40,10 +43,15 @@ function PollManageDetailContent() {
   const { run: updatePoll, pending: saving, error: saveError } = useTrackedMutation(api.polls.update);
   const { run: addDate, pending: adding, error: addError } = useTrackedMutation(api.polls.addCandidateDate);
   const { run: removeDate, error: removeError } = useTrackedMutation(api.polls.removeCandidateDate);
-  const { run: reorderDates, error: reorderError } = useTrackedMutation(api.polls.reorderCandidateDates);
+  const {
+    run: reorderDates,
+    pending: reordering,
+    error: reorderError,
+  } = useTrackedMutation(api.polls.reorderCandidateDates);
 
   const [fields, setFields] = useState({ title: "", description: "", location: "", deadline: "" });
   const [newDate, setNewDate] = useState<CandidateDateDraft>(emptyCandidateDate());
+  const [lastAction, setLastAction] = useState<PollAction | null>(null);
 
   usePageTitle(poll?.title);
 
@@ -63,11 +71,21 @@ function PollManageDetailContent() {
   if (poll === undefined) return <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>;
 
   const closed = poll.status === "closed";
-  // One slot: a single click only ever puts one of these in flight.
-  const error = saveError ?? addError ?? removeError ?? reorderError;
+  // A useTrackedMutation only ever clears its own error, so showing the
+  // first non-null of the four would pin a failed Save above a later
+  // successful Add. The single slot belongs to whichever action ran last,
+  // which each handler claims before it starts.
+  const errors: Record<PollAction, string | null> = {
+    save: saveError,
+    add: addError,
+    remove: removeError,
+    reorder: reorderError,
+  };
+  const error = lastAction === null ? null : errors[lastAction];
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    setLastAction("save");
     await updatePoll({
       pollId: id,
       title: fields.title,
@@ -75,13 +93,14 @@ function PollManageDetailContent() {
       // convention, so clearing the deadline says so with null.
       description: fields.description,
       location: fields.location,
-      deadlineAt: fields.deadline ? fromDateInput(fields.deadline) : null,
+      deadlineAt: fields.deadline ? fromDateInputEndOfDay(fields.deadline) : null,
     });
   }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!isFilled(newDate)) return;
+    setLastAction("add");
     const added = await addDate({ pollId: id, ...toCandidateDateInput(newDate) });
     if (added !== undefined) setNewDate(emptyCandidateDate());
   }
@@ -90,12 +109,14 @@ function PollManageDetailContent() {
     const ids = candidateDates.map((c) => c._id);
     const moved = moveItem(ids, index, direction);
     if (moved === ids) return;
+    setLastAction("reorder");
     void reorderDates({ pollId: id, candidateDateIds: moved });
   }
 
   async function handleRemove(candidateDate: Doc<"candidateDates">) {
     const label = formatCandidateDate(candidateDate.startsAt, candidateDate.endsAt);
     if (!confirm(`Remove ${label}? This also deletes any Availability recorded for it.`)) return;
+    setLastAction("remove");
     await removeDate({ candidateDateId: candidateDate._id });
   }
 
@@ -179,7 +200,7 @@ function PollManageDetailContent() {
                       type="button"
                       aria-label={`Move ${formatCandidateDate(candidateDate.startsAt, candidateDate.endsAt)} up`}
                       onClick={() => handleMove(poll.candidateDates, i, -1)}
-                      disabled={i === 0}
+                      disabled={i === 0 || reordering}
                     >
                       ↑
                     </button>
@@ -187,7 +208,7 @@ function PollManageDetailContent() {
                       type="button"
                       aria-label={`Move ${formatCandidateDate(candidateDate.startsAt, candidateDate.endsAt)} down`}
                       onClick={() => handleMove(poll.candidateDates, i, 1)}
-                      disabled={i === poll.candidateDates.length - 1}
+                      disabled={i === poll.candidateDates.length - 1 || reordering}
                     >
                       ↓
                     </button>

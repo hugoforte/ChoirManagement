@@ -6,7 +6,7 @@ import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { useTrackedMutation } from "../lib/useTrackedMutation";
-import { fromDateInput, toDateInput } from "../lib/datetime";
+import { fromDateInputEndOfDay, toDateInput } from "../lib/datetime";
 import {
   emptyCandidateDate,
   isFilled,
@@ -46,7 +46,7 @@ function PollsManageContent() {
       title: fields.title.trim(),
       description: fields.description,
       location: fields.location,
-      deadlineAt: fields.deadline ? fromDateInput(fields.deadline) : undefined,
+      deadlineAt: fields.deadline ? fromDateInputEndOfDay(fields.deadline) : undefined,
       candidateDates: dates.map(toCandidateDateInput),
     });
     if (pollId !== undefined) {

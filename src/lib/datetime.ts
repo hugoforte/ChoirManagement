@@ -33,6 +33,19 @@ export function fromDateInput(date: string, time?: string): number {
   return new Date(year, month - 1, day, hours, minutes).getTime();
 }
 
+// A response deadline is a day, not an instant: "responses by 1 March"
+// means through the end of 1 March, so a date input's value is stored as
+// that day's last millisecond rather than the midnight that starts it. A
+// Candidate Date is the opposite case — local midnight there means the
+// whole day is on offer, not that it has already passed.
+//
+// toDateInput reads this straight back to the same date, so the form
+// round-trips without a matching inverse.
+export function fromDateInputEndOfDay(date: string): number {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(year, month - 1, day, 23, 59, 59, 999).getTime();
+}
+
 // Display for a Candidate Date. Local midnight with no end is exactly what
 // the date-only case stores, so it reads as a bare date instead of claiming
 // a meeting at 00:00; anything else shows the window it actually carries.
