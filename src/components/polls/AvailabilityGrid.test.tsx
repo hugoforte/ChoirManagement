@@ -1,4 +1,4 @@
-// The grid is presentational (the route owns the polls.grid subscription),
+// The grid is presentational (the route owns the polls.getGrid subscription),
 // so these render it against the query's own return shape directly — no
 // convex/react mock is needed, and #88 can lean on the same coverage when
 // it reuses the component read-only.

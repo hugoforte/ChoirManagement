@@ -11,10 +11,22 @@ import type { Doc } from "../../convex/_generated/dataModel";
 // missing control.
 export type AvailabilityValue = Doc<"availabilities">["value"];
 
-// "If needed" sits between the two, not after them: it is a first-class
-// answer, not a shade of "no" (#9), and reading it last would invite
-// exactly that reading.
-export const AVAILABILITY_VALUES: readonly AvailabilityValue[] = ["available", "if_needed", "unavailable"];
+// The order the controls read in, as a Record over every value rather than
+// a hand-listed array: a fourth value added to the schema fails to compile
+// here instead of quietly rendering no button for itself.
+//
+// "If needed" sits between the other two, not after them — it is a
+// first-class answer, not a shade of "no" (#9), and reading it last would
+// invite exactly that reading.
+const AVAILABILITY_ORDER: Record<AvailabilityValue, number> = {
+  available: 0,
+  if_needed: 1,
+  unavailable: 2,
+};
+
+export const AVAILABILITY_VALUES: readonly AvailabilityValue[] = (
+  Object.keys(AVAILABILITY_ORDER) as AvailabilityValue[]
+).sort((a, b) => AVAILABILITY_ORDER[a] - AVAILABILITY_ORDER[b]);
 
 export const AVAILABILITY_LABEL: Record<AvailabilityValue | "not answered", string> = {
   available: "Available",

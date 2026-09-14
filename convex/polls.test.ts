@@ -486,3 +486,26 @@ test("a Poll's grid is closed to a caller with no identity", async () => {
     t.mutation(api.polls.setAvailability, { candidateDateId: dates[0]._id, value: "available" }),
   ).rejects.toThrow(/Not signed in/);
 });
+
+test("setAvailability leaves the Poll's own audit stamp alone", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Spring Concert",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+  const dates = (await asDirector.query(api.polls.get, { pollId }))!.candidateDates;
+  const before = (await t.run(async (ctx) => ctx.db.get("polls", pollId)))!;
+
+  await t
+    .withIdentity(choristerIdentity)
+    .mutation(api.polls.setAvailability, { candidateDateId: dates[0]._id, value: "available" });
+
+  // Answering a Poll is not editing it: updatedByMemberId belongs to the
+  // Director who owns the Poll's contents (#84), and a response must not
+  // overwrite it. #86 and #87 add mutations either side of this one.
+  const after = (await t.run(async (ctx) => ctx.db.get("polls", pollId)))!;
+  expect(after.updatedAt).toBe(before.updatedAt);
+  expect(after.updatedByMemberId).toBe(before.updatedByMemberId);
+});

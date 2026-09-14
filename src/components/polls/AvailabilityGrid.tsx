@@ -1,11 +1,11 @@
 // The named availability grid (#85): every Member as a row, every Candidate
-// Date as a column, and the gaps left visible. Extracted as its own
-// component because #88 renders the same grid read-only for a closed Poll —
+// Date as a column, and the gaps left visible. It lives apart from the
+// route because #88 renders the same grid read-only for a closed Poll —
 // omit `onSet` and every control disappears, which is also how a closed
 // Poll renders here.
 //
-// Presentational on purpose: it takes the `polls.grid` result rather than
-// subscribing itself, so the route owns the one subscription and the
+// Presentational on purpose: it takes the `polls.getGrid` result rather
+// than subscribing itself, so the route owns the one subscription and the
 // component stays trivially testable.
 import type { FunctionReturnType } from "convex/server";
 
