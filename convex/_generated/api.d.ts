@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as bulletinShareLinks from "../bulletinShareLinks.js";
 import type * as bulletins from "../bulletins.js";
 import type * as choirSettings from "../choirSettings.js";
 import type * as events from "../events.js";
@@ -31,6 +32,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  bulletinShareLinks: typeof bulletinShareLinks;
   bulletins: typeof bulletins;
   choirSettings: typeof choirSettings;
   events: typeof events;

@@ -80,3 +80,105 @@ export const getEvent = query({
     };
   },
 });
+
+// ---------------------------------------------------------------------------
+// Bulletin Share Links (#83, ADR-0004)
+//
+// The app's only unauthenticated read of Member-only content. A token is a
+// bearer credential for exactly one published Bulletin: whoever holds the URL
+// reads that Bulletin and nothing else — no roster, no RSVPs, no other
+// Bulletin, and nothing of the anchored Event beyond what a printed programme
+// would carry. The projections below name every field they return one by one,
+// so a field added to `bulletins` or `events` later cannot leak by being
+// spread into a response.
+// ---------------------------------------------------------------------------
+
+// Bounded like the public Events list: a Bulletin with more Remarks than this
+// is not a case this read needs to serve in one response.
+const REMARKS_LIMIT = 200;
+
+const sharedBulletinFields = {
+  title: v.string(),
+  body: v.string(),
+  publishedAt: v.number(),
+  updatedAt: v.number(),
+  // Title, date and location only. Deliberately not `visibility` — whether
+  // the Choir lists an Event on its public website is none of a link
+  // holder's business — and deliberately no id, so a guest is never handed
+  // an internal identifier to try elsewhere.
+  event: v.union(
+    v.null(),
+    v.object({ title: v.string(), startsAt: v.number(), location: v.optional(v.string()) }),
+  ),
+  // A Remark's Piece by title, the same plain-text treatment the public
+  // Setlist gets: no link into the Music Library, no Piece id.
+  remarks: v.array(v.object({ pieceTitle: v.string(), text: v.string() })),
+};
+
+// The `by_share_link_token` index covers an optional field, so every Bulletin
+// without a Share Link indexes under `undefined`. Both callers take
+// `token: v.string()` and pass it through unchanged — an undefined reaching
+// this lookup would match an arbitrary unshared Bulletin (see schema.ts).
+async function bulletinByToken(ctx: QueryCtx, token: string) {
+  return await ctx.db
+    .query("bulletins")
+    .withIndex("by_share_link_token", (q) => q.eq("shareLink.token", token))
+    .unique();
+}
+
+export const getSharedBulletin = query({
+  args: { token: v.string() },
+  returns: v.union(v.null(), v.object(sharedBulletinFields)),
+  handler: async (ctx, { token }) => {
+    const bulletin = await bulletinByToken(ctx, token);
+    // An unknown token, a revoked link, a draft and a sign-in-required link
+    // are all the same `null` here. The route tells them apart through
+    // getSharedBulletinMode; this query never explains its refusal.
+    if (!bulletin) return null;
+    if (bulletin.status !== "published" || bulletin.publishedAt === undefined) return null;
+    if (bulletin.shareLink?.mode !== "token") return null;
+
+    const event = bulletin.eventId ? await ctx.db.get("events", bulletin.eventId) : null;
+    const remarkRows = await ctx.db
+      .query("bulletinRemarks")
+      .withIndex("by_bulletin_id_and_display_order", (q) => q.eq("bulletinId", bulletin._id))
+      .take(REMARKS_LIMIT);
+
+    return {
+      title: bulletin.title,
+      body: bulletin.body,
+      publishedAt: bulletin.publishedAt,
+      updatedAt: bulletin.updatedAt,
+      event: event
+        ? { title: event.title, startsAt: event.startsAt, location: event.location }
+        : null,
+      remarks: await Promise.all(
+        remarkRows.map(async (remark) => ({
+          pieceTitle: (await ctx.db.get("pieces", remark.pieceId))?.title ?? "Untitled",
+          text: remark.text,
+        })),
+      ),
+    };
+  },
+});
+
+// Lets /s/:token decide whether to render the Bulletin or bounce the visitor
+// through sign-in, without the route having to guess from a null.
+//
+// This leaks one bit to a token holder — that a Share Link by this name
+// exists and which mode it is in — and no content whatsoever. Acceptable per
+// ADR-0004: the token is already a bearer credential, so anyone able to ask
+// this question is someone the link was handed to, and a guessed token
+// learns nothing but "no".
+export const getSharedBulletinMode = query({
+  args: { token: v.string() },
+  returns: v.union(v.null(), v.literal("token"), v.literal("sign_in_required")),
+  handler: async (ctx, { token }) => {
+    const bulletin = await bulletinByToken(ctx, token);
+    // A draft reads as no link at all, so a token issued before publishing
+    // stays inert — including in sign-in mode, which would otherwise send a
+    // visitor through sign-in only to find nothing.
+    if (!bulletin || bulletin.status !== "published") return null;
+    return bulletin.shareLink?.mode ?? null;
+  },
+});
