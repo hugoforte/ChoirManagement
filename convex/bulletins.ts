@@ -1,10 +1,13 @@
 // Authoring a Bulletin: draft, publish, edit, delete (#80, part of #49).
 // Reading — the Member-facing archive, Remarks, Share Links — lands in the
-// sibling slices; everything here requires `manageBulletins`, so drafts are
-// unreachable without it.
-import { mutation, query } from "./_generated/server";
+// sibling slices. Everything above the "Member-facing read side" divider
+// requires `manageBulletins`; below it, `requireMember` — and nothing below
+// the divider ever returns a draft.
+import { mutation, query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
-import { requireCan } from "./lib/auth";
+import { paginationOptsValidator, paginationResultValidator } from "convex/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import { requireCan, requireMember } from "./lib/auth";
 import schema from "./schema";
 
 // A manage-list row: the stored Bulletin plus the anchored Event's title,
@@ -18,6 +21,26 @@ const bulletinListEntry = v.object({
 });
 
 const PAGE_LIMIT = 200;
+
+const UNKNOWN_EVENT = "Unknown Event";
+
+// An Event may accumulate several Bulletins (#49), so the same anchor recurs
+// down a list. Fetch each distinct Event once rather than once per row that
+// points at it.
+async function eventTitlesByIdFor(
+  ctx: QueryCtx,
+  bulletins: { eventId?: Id<"events"> }[],
+): Promise<Map<Id<"events">, string>> {
+  const uniqueEventIds = [...new Set(bulletins.flatMap((b) => (b.eventId ? [b.eventId] : [])))];
+  return new Map(
+    await Promise.all(
+      uniqueEventIds.map(
+        async (eventId) =>
+          [eventId, (await ctx.db.get("events", eventId))?.title ?? UNKNOWN_EVENT] as const,
+      ),
+    ),
+  );
+}
 
 // Drafts first (newest first), then published Bulletins (most recently
 // published first) — the manage view's job is finishing the unfinished, so
@@ -39,23 +62,11 @@ export const listAll = query({
       .order("desc")
       .take(PAGE_LIMIT);
     const rows = [...drafts, ...published];
-
-    // An Event may accumulate several Bulletins (#49), so the same anchor
-    // recurs down the list. Fetch each distinct Event once rather than once
-    // per row that points at it.
-    const uniqueEventIds = [...new Set(rows.flatMap((b) => (b.eventId ? [b.eventId] : [])))];
-    const titleByEventId = new Map(
-      await Promise.all(
-        uniqueEventIds.map(
-          async (eventId) =>
-            [eventId, (await ctx.db.get("events", eventId))?.title ?? "Unknown Event"] as const,
-        ),
-      ),
-    );
+    const titleByEventId = await eventTitlesByIdFor(ctx, rows);
 
     return rows.map((bulletin) => ({
       ...bulletin,
-      eventTitle: bulletin.eventId ? (titleByEventId.get(bulletin.eventId) ?? "Unknown Event") : null,
+      eventTitle: bulletin.eventId ? (titleByEventId.get(bulletin.eventId) ?? UNKNOWN_EVENT) : null,
     }));
   },
 });
@@ -174,6 +185,126 @@ export const remove = mutation({
     // Remarks are owned by their Bulletin and cascade from here; #81 adds
     // that cascade along with the table's first writer.
     await ctx.db.delete("bulletins", bulletinId);
+    return null;
+  },
+});
+
+// ---------------------------------------------------------------------------
+// The Member-facing read side (#82): the archive, the reading view, and the
+// unread marker. `requireMember`, not `manageBulletins` — every signed-in
+// Member reads every published Bulletin, there is no per-Bulletin audience
+// (#49). Drafts are excluded here for *every* Role, managers included: the
+// manage route stays the only way to reach one, so a half-written Bulletin
+// can never be linked to from a reading URL.
+
+// Deliberately not the whole document. `shareLink.token` is a bearer
+// credential (ADR-0004) with no business being on a read every Member makes,
+// and the list needs a title rather than the anchored Event's id.
+const publishedBulletinEntry = v.object({
+  _id: v.id("bulletins"),
+  title: v.string(),
+  publishedAt: v.number(),
+  updatedAt: v.number(),
+  eventId: v.union(v.id("events"), v.null()),
+  eventTitle: v.union(v.string(), v.null()),
+});
+
+const publishedBulletin = publishedBulletinEntry.extend({ body: v.string() });
+
+// `publishedAt` is optional on the table because a draft has none; every row
+// these queries project is published, so it is set. The fallback keeps the
+// projection total instead of throwing on a row that could only exist if it
+// had been written around `publish`.
+function projectPublished(bulletin: Doc<"bulletins">, eventTitle: string | null) {
+  return {
+    _id: bulletin._id,
+    title: bulletin.title,
+    publishedAt: bulletin.publishedAt ?? bulletin._creationTime,
+    updatedAt: bulletin.updatedAt,
+    eventId: bulletin.eventId ?? null,
+    eventTitle,
+  };
+}
+
+// Newest first, and paginated rather than collected: the archive is the one
+// list in the app that only grows — a choir posting weekly has hundreds of
+// rows within a few years, and none of them past the first screen matter.
+export const listPublished = query({
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(publishedBulletinEntry),
+  handler: async (ctx, { paginationOpts }) => {
+    await requireMember(ctx);
+    const result = await ctx.db
+      .query("bulletins")
+      .withIndex("by_status_and_published_at", (q) => q.eq("status", "published"))
+      .order("desc")
+      .paginate(paginationOpts);
+
+    const titleByEventId = await eventTitlesByIdFor(ctx, result.page);
+    return {
+      ...result,
+      page: result.page.map((bulletin) =>
+        projectPublished(
+          bulletin,
+          bulletin.eventId ? (titleByEventId.get(bulletin.eventId) ?? UNKNOWN_EVENT) : null,
+        ),
+      ),
+    };
+  },
+});
+
+// null covers both "no such Bulletin" and "that Bulletin is a draft", for
+// every Role — a manager reading a draft goes through `get` on the manage
+// route. Distinguishing the two would tell an unprivileged caller that a
+// draft exists at that id, which is the one thing the draft state is for.
+export const getPublished = query({
+  args: { bulletinId: v.id("bulletins") },
+  returns: v.union(v.null(), publishedBulletin),
+  handler: async (ctx, { bulletinId }) => {
+    await requireMember(ctx);
+    const bulletin = await ctx.db.get("bulletins", bulletinId);
+    if (!bulletin || bulletin.status !== "published") return null;
+
+    const event = bulletin.eventId ? await ctx.db.get("events", bulletin.eventId) : null;
+    return {
+      ...projectPublished(bulletin, bulletin.eventId ? (event?.title ?? UNKNOWN_EVENT) : null),
+      body: bulletin.body,
+    };
+  },
+});
+
+// The whole unread marker: one timestamp on the Member against the newest
+// publish, no notification records and no per-Bulletin receipts (#57 owns
+// that). Takes no `now` because it compares two stored instants — the wall
+// clock never enters into it, which is also why it may live in a query.
+export const hasUnread = query({
+  args: {},
+  returns: v.boolean(),
+  handler: async (ctx) => {
+    const member = await requireMember(ctx);
+    const newest = await ctx.db
+      .query("bulletins")
+      .withIndex("by_status_and_published_at", (q) => q.eq("status", "published"))
+      .order("desc")
+      .first();
+    if (!newest) return false;
+
+    // Absent means the Member has never opened the list, so everything
+    // published is unread.
+    if (member.lastReadBulletinsAt === undefined) return true;
+    return (newest.publishedAt ?? newest._creationTime) > member.lastReadBulletinsAt;
+  },
+});
+
+// Called on mount by the archive route, which passes its own Date.now():
+// "read up to the moment you opened the list", and a mutation rather than a
+// query because a query must neither write nor read the clock.
+export const markBulletinsRead = mutation({
+  args: { now: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { now }) => {
+    const member = await requireMember(ctx);
+    await ctx.db.patch("members", member._id, { lastReadBulletinsAt: now });
     return null;
   },
 });

@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 
 import schema from "./schema";
 import { api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -294,4 +295,206 @@ test("remove refuses a Chorister", async () => {
   await expect(
     t.withIdentity(choristerIdentity).mutation(api.bulletins.remove, { bulletinId }),
   ).rejects.toThrow(/Requires capability: manageBulletins/);
+});
+
+// --- The Member-facing read side (#82) ------------------------------------
+
+// Rows are inserted directly rather than through createDraft/publish so each
+// test can pin publishedAt: the unread marker is entirely a comparison of two
+// stored instants, and asserting it against Date.now() would be a race.
+async function insertBulletin(
+  t: ReturnType<typeof convexTest>,
+  bulletin: {
+    title: string;
+    createdByMemberId: Id<"members">;
+    publishedAt?: number;
+    eventId?: Id<"events">;
+    body?: string;
+    updatedAt?: number;
+  },
+) {
+  return await t.run(async (ctx) =>
+    ctx.db.insert("bulletins", {
+      title: bulletin.title,
+      body: bulletin.body ?? "",
+      eventId: bulletin.eventId,
+      status: bulletin.publishedAt === undefined ? "draft" : "published",
+      publishedAt: bulletin.publishedAt,
+      updatedAt: bulletin.updatedAt ?? bulletin.publishedAt ?? 0,
+      createdByMemberId: bulletin.createdByMemberId,
+      updatedByMemberId: undefined,
+      shareLink: undefined,
+    }),
+  );
+}
+
+const firstPage = { paginationOpts: { numItems: 20, cursor: null } };
+
+// Managers included, deliberately: a draft is unreachable from the reading
+// routes for every Role, so the manage route stays the only way to open one.
+test.each([
+  ["a Chorister", choristerIdentity],
+  ["a Director", directorIdentity],
+  ["an Admin", adminIdentity],
+])("listPublished hides drafts from %s", async (_label, identity) => {
+  const t = convexTest(schema, modules);
+  const { directorId } = await seedMembers(t);
+  await insertBulletin(t, { title: "Still writing", createdByMemberId: directorId });
+  await insertBulletin(t, { title: "Out already", createdByMemberId: directorId, publishedAt: 1_000 });
+
+  const result = await t.withIdentity(identity).query(api.bulletins.listPublished, firstPage);
+
+  expect(result.page.map((b) => b.title)).toEqual(["Out already"]);
+});
+
+test("listPublished returns the newest publish first", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId } = await seedMembers(t);
+  await insertBulletin(t, { title: "Older", createdByMemberId: directorId, publishedAt: 1_000 });
+  await insertBulletin(t, { title: "Newer", createdByMemberId: directorId, publishedAt: 2_000 });
+
+  const result = await t.withIdentity(choristerIdentity).query(api.bulletins.listPublished, firstPage);
+
+  expect(result.page.map((b) => b.title)).toEqual(["Newer", "Older"]);
+});
+
+test("listPublished labels each row with its anchored Event", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId } = await seedMembers(t);
+  const eventId = await insertEvent(t, "Tuesday Rehearsal");
+  await insertBulletin(t, { title: "Anchored", createdByMemberId: directorId, publishedAt: 2_000, eventId });
+  await insertBulletin(t, { title: "Standalone", createdByMemberId: directorId, publishedAt: 1_000 });
+
+  const result = await t.withIdentity(choristerIdentity).query(api.bulletins.listPublished, firstPage);
+
+  expect(result.page.map((b) => [b.title, b.eventTitle])).toEqual([
+    ["Anchored", "Tuesday Rehearsal"],
+    ["Standalone", null],
+  ]);
+});
+
+test("listPublished refuses a caller who isn't a Member", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+
+  await expect(t.query(api.bulletins.listPublished, firstPage)).rejects.toThrow(/Not signed in/);
+});
+
+test.each([
+  ["a Chorister", choristerIdentity],
+  ["a Director", directorIdentity],
+  ["an Admin", adminIdentity],
+])("getPublished refuses a draft to %s", async (_label, identity) => {
+  const t = convexTest(schema, modules);
+  const { directorId } = await seedMembers(t);
+  const bulletinId = await insertBulletin(t, { title: "Still writing", createdByMemberId: directorId });
+
+  expect(await t.withIdentity(identity).query(api.bulletins.getPublished, { bulletinId })).toBeNull();
+});
+
+test("getPublished returns a published Bulletin with its body and Event", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId } = await seedMembers(t);
+  const eventId = await insertEvent(t, "Tuesday Rehearsal");
+  const bulletinId = await insertBulletin(t, {
+    title: "Rehearsal notes",
+    createdByMemberId: directorId,
+    publishedAt: 1_000,
+    updatedAt: 5_000,
+    body: "## Bring your Palestrina",
+    eventId,
+  });
+
+  const bulletin = await t.withIdentity(choristerIdentity).query(api.bulletins.getPublished, { bulletinId });
+
+  expect(bulletin).toEqual({
+    _id: bulletinId,
+    title: "Rehearsal notes",
+    body: "## Bring your Palestrina",
+    publishedAt: 1_000,
+    updatedAt: 5_000,
+    eventId,
+    eventTitle: "Tuesday Rehearsal",
+  });
+});
+
+// The Share Link token is a bearer credential (ADR-0004); the reading view
+// has no use for it, so it must not ride along on a read every Member makes.
+test("getPublished does not expose the Share Link token", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId } = await seedMembers(t);
+  const bulletinId = await insertBulletin(t, {
+    title: "Shared",
+    createdByMemberId: directorId,
+    publishedAt: 1_000,
+  });
+  await t.run(async (ctx) =>
+    ctx.db.patch("bulletins", bulletinId, { shareLink: { token: "secret-token", mode: "token" } }),
+  );
+
+  const bulletin = await t.withIdentity(choristerIdentity).query(api.bulletins.getPublished, { bulletinId });
+
+  expect(JSON.stringify(bulletin)).not.toContain("secret-token");
+});
+
+async function setLastRead(t: ReturnType<typeof convexTest>, memberId: Id<"members">, at: number) {
+  await t.run(async (ctx) => ctx.db.patch("members", memberId, { lastReadBulletinsAt: at }));
+}
+
+test("hasUnread is true when a Bulletin was published after the Member last looked", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId, choristerId } = await seedMembers(t);
+  await setLastRead(t, choristerId, 1_000);
+  await insertBulletin(t, { title: "Since", createdByMemberId: directorId, publishedAt: 2_000 });
+
+  expect(await t.withIdentity(choristerIdentity).query(api.bulletins.hasUnread, {})).toBe(true);
+});
+
+test("hasUnread is false when the newest publish predates the Member's last look", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId, choristerId } = await seedMembers(t);
+  await setLastRead(t, choristerId, 3_000);
+  await insertBulletin(t, { title: "Before", createdByMemberId: directorId, publishedAt: 2_000 });
+
+  expect(await t.withIdentity(choristerIdentity).query(api.bulletins.hasUnread, {})).toBe(false);
+});
+
+test("hasUnread is true for a Member who has never opened the list", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId } = await seedMembers(t);
+  await insertBulletin(t, { title: "Anything", createdByMemberId: directorId, publishedAt: 2_000 });
+
+  expect(await t.withIdentity(choristerIdentity).query(api.bulletins.hasUnread, {})).toBe(true);
+});
+
+test("hasUnread is false when nothing is published, however old the draft", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId } = await seedMembers(t);
+  await insertBulletin(t, { title: "Still writing", createdByMemberId: directorId });
+
+  expect(await t.withIdentity(choristerIdentity).query(api.bulletins.hasUnread, {})).toBe(false);
+});
+
+test("markBulletinsRead advances the caller's own timestamp and nobody else's", async () => {
+  const t = convexTest(schema, modules);
+  const { choristerId, directorId } = await seedMembers(t);
+
+  await t.withIdentity(choristerIdentity).mutation(api.bulletins.markBulletinsRead, { now: 4_000 });
+
+  const chorister = await t.run(async (ctx) => await ctx.db.get("members", choristerId));
+  const director = await t.run(async (ctx) => await ctx.db.get("members", directorId));
+  expect(chorister?.lastReadBulletinsAt).toBe(4_000);
+  expect(director?.lastReadBulletinsAt).toBeUndefined();
+});
+
+test("markBulletinsRead clears the unread marker", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId } = await seedMembers(t);
+  await insertBulletin(t, { title: "Fresh", createdByMemberId: directorId, publishedAt: 2_000 });
+  const asChorister = t.withIdentity(choristerIdentity);
+  expect(await asChorister.query(api.bulletins.hasUnread, {})).toBe(true);
+
+  await asChorister.mutation(api.bulletins.markBulletinsRead, { now: 3_000 });
+
+  expect(await asChorister.query(api.bulletins.hasUnread, {})).toBe(false);
 });
