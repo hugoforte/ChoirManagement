@@ -130,6 +130,18 @@ export default defineSchema({
     .index("by_storage_id", ["storageId"])
     .index("by_uploaded_at", ["uploadedAt"]),
 
+  // Blobs uploaded for an in-progress review batch. Publishing or explicitly
+  // cancelling removes these rows in the same transaction as the associated
+  // metadata/storage change. #68 will use createdAt for abandoned cleanup.
+  pendingPieceUploads: defineTable({
+    pieceId: v.id("pieces"),
+    storageId: v.id("_storage"),
+    uploadedByMemberId: v.id("members"),
+    createdAt: v.number(),
+  })
+    .index("by_storage_id", ["storageId"])
+    .index("by_created_at", ["createdAt"]),
+
   events: defineTable({
     title: v.string(),
     description: v.optional(v.string()),

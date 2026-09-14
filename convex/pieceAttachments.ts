@@ -11,6 +11,7 @@ import {
   requireCurrentRevisionBelongsToAttachment,
   requirePrimaryScoreEligible,
   requirePurposeAllowedForFormat,
+  requireSafeUpload,
   requireValidVoicePartSelection,
 } from "./lib/pieceAttachmentPolicy";
 import schema from "./schema";
@@ -33,9 +34,11 @@ const attachmentFields = {
 const reviewedAttachmentValidator = v.object({
   storageId: v.id("_storage"),
   originalFilename: v.string(),
+  replaceAttachmentId: v.optional(v.id("pieceAttachments")),
   ...attachmentFields,
   revisionNote: v.optional(v.string()),
   revisionLabel: v.optional(v.string()),
+  durationSeconds: v.optional(v.number()),
 });
 
 const currentAttachmentValidator = v.object({
@@ -185,6 +188,42 @@ export const getManagementDetail = query({
   },
 });
 
+export const registerPendingUpload = mutation({
+  args: {
+    pieceId: v.id("pieces"),
+    storageId: v.id("_storage"),
+  },
+  returns: v.null(),
+  handler: async (ctx, { pieceId, storageId }) => {
+    const actor = await requireCan(ctx, "manageLibrary");
+    await requirePieceAccess(ctx, pieceId);
+    await getStorageMetadata(ctx, storageId);
+    await requireStorageHasNoVersion(ctx, storageId);
+
+    const existing = await ctx.db
+      .query("pendingPieceUploads")
+      .withIndex("by_storage_id", (q) => q.eq("storageId", storageId))
+      .unique();
+    if (existing) {
+      if (
+        existing.pieceId !== pieceId ||
+        existing.uploadedByMemberId !== actor._id
+      ) {
+        throw new Error("Uploaded file is already registered to another batch");
+      }
+      return null;
+    }
+
+    await ctx.db.insert("pendingPieceUploads", {
+      pieceId,
+      storageId,
+      uploadedByMemberId: actor._id,
+      createdAt: Date.now(),
+    });
+    return null;
+  },
+});
+
 export const publishBatch = mutation({
   args: {
     pieceId: v.id("pieces"),
@@ -208,8 +247,15 @@ export const publishBatch = mutation({
     if (storageIds.size !== attachments.length) {
       throw new Error("A storage file can appear only once in a publish batch");
     }
+    const replacementIds = attachments.flatMap((attachment) =>
+      attachment.replaceAttachmentId ? [attachment.replaceAttachmentId] : [],
+    );
+    if (new Set(replacementIds).size !== replacementIds.length) {
+      throw new Error("A batch can replace an attachment only once");
+    }
     const batchPrimaryCount = attachments.filter(
-      (attachment) => attachment.isPrimary,
+      (attachment) =>
+        !attachment.replaceAttachmentId && attachment.isPrimary,
     ).length;
     if (batchPrimaryCount > 1)
       throw new Error("A batch can contain only one primary score");
@@ -221,8 +267,11 @@ export const publishBatch = mutation({
         q.eq("pieceId", pieceId).eq("status", "active"),
       )
       .take(MAX_ATTACHMENTS_PER_PIECE);
+    const newAttachmentCount = attachments.filter(
+      (attachment) => !attachment.replaceAttachmentId,
+    ).length;
     if (
-      existingAttachments.length + attachments.length >
+      existingAttachments.length + newAttachmentCount >
       MAX_ATTACHMENTS_PER_PIECE
     ) {
       throw new Error(
@@ -233,26 +282,116 @@ export const publishBatch = mutation({
     const reviewed = await Promise.all(
       attachments.map(async (attachment) => {
         requireNonEmptyFilename(attachment.originalFilename);
-        requirePurposeAllowedForFormat(attachment.format, attachment.purpose);
-        if (attachment.isPrimary) {
-          requirePrimaryScoreEligible(attachment.format, attachment.purpose);
+        if (
+          attachment.durationSeconds !== undefined &&
+          (!Number.isFinite(attachment.durationSeconds) ||
+            attachment.durationSeconds <= 0)
+        ) {
+          throw new Error("Audio duration must be a positive number");
         }
-        await validateVoiceParts(
-          ctx,
-          attachment.purpose,
-          attachment.voicePartIds,
-        );
+        let replacedAttachment: Doc<"pieceAttachments"> | null = null;
+        let replacedVersion: Doc<"pieceFileVersions"> | null = null;
+        if (attachment.replaceAttachmentId) {
+          replacedAttachment = await ctx.db.get(
+            "pieceAttachments",
+            attachment.replaceAttachmentId,
+          );
+          if (
+            !replacedAttachment ||
+            replacedAttachment.pieceId !== pieceId ||
+            replacedAttachment.status !== "active"
+          ) {
+            throw new Error("Replacement attachment not found for this Piece");
+          }
+          if (!replacedAttachment.currentVersionId) {
+            throw new Error("Replacement attachment has no current revision");
+          }
+          replacedVersion = await ctx.db.get(
+            "pieceFileVersions",
+            replacedAttachment.currentVersionId,
+          );
+          requireCurrentRevisionBelongsToAttachment(
+            replacedAttachment._id,
+            replacedVersion,
+          );
+          if (attachment.format !== replacedAttachment.format) {
+            throw new Error(
+              "New version must keep the same file format as the replaced attachment",
+            );
+          }
+        } else {
+          requirePurposeAllowedForFormat(attachment.format, attachment.purpose);
+          if (attachment.isPrimary) {
+            requirePrimaryScoreEligible(attachment.format, attachment.purpose);
+          }
+          await validateVoiceParts(
+            ctx,
+            attachment.purpose,
+            attachment.voicePartIds,
+          );
+        }
         await requireStorageHasNoVersion(ctx, attachment.storageId);
+        const metadata = await getStorageMetadata(ctx, attachment.storageId);
+        requireSafeUpload(attachment.originalFilename, metadata.size);
+        const pendingUpload = await ctx.db
+          .query("pendingPieceUploads")
+          .withIndex("by_storage_id", (q) =>
+            q.eq("storageId", attachment.storageId),
+          )
+          .unique();
+        if (
+          pendingUpload &&
+          (pendingUpload.pieceId !== pieceId ||
+            pendingUpload.uploadedByMemberId !== actor._id)
+        ) {
+          throw new Error("Uploaded file is registered to another batch");
+        }
         return {
           attachment,
-          metadata: await getStorageMetadata(ctx, attachment.storageId),
+          metadata,
+          pendingUploadId: pendingUpload?._id,
+          replacedAttachment,
+          replacedVersion,
         };
       }),
     );
 
     const now = Date.now();
     const createdIds: Id<"pieceAttachments">[] = [];
-    for (const { attachment, metadata } of reviewed) {
+    let insertedAttachmentCount = 0;
+    for (const {
+      attachment,
+      metadata,
+      pendingUploadId,
+      replacedAttachment,
+      replacedVersion,
+    } of reviewed) {
+      if (replacedAttachment && replacedVersion) {
+        const versionId = await ctx.db.insert("pieceFileVersions", {
+          attachmentId: replacedAttachment._id,
+          storageId: attachment.storageId,
+          revisionNumber: replacedVersion.revisionNumber + 1,
+          originalFilename: attachment.originalFilename,
+          contentType: metadata.contentType,
+          size: metadata.size,
+          sha256: metadata.sha256,
+          durationSeconds: attachment.durationSeconds,
+          uploadedAt: now,
+          uploadedByMemberId: actor._id,
+          revisionNote: attachment.revisionNote,
+          revisionLabel: attachment.revisionLabel,
+        });
+        await ctx.db.patch("pieceAttachments", replacedAttachment._id, {
+          currentVersionId: versionId,
+          updatedAt: now,
+          updatedByMemberId: actor._id,
+        });
+        if (pendingUploadId) {
+          await ctx.db.delete("pendingPieceUploads", pendingUploadId);
+        }
+        createdIds.push(replacedAttachment._id);
+        continue;
+      }
       const attachmentId = await ctx.db.insert("pieceAttachments", {
         pieceId,
         format: attachment.format,
@@ -260,7 +399,7 @@ export const publishBatch = mutation({
         voicePartIds: attachment.voicePartIds,
         label: attachment.label,
         filenameOverride: attachment.filenameOverride,
-        displayOrder: existingAttachments.length + createdIds.length,
+        displayOrder: existingAttachments.length + insertedAttachmentCount,
         isPrimary: attachment.isPrimary,
         status: "active",
         updatedAt: now,
@@ -275,6 +414,7 @@ export const publishBatch = mutation({
         contentType: metadata.contentType,
         size: metadata.size,
         sha256: metadata.sha256,
+        durationSeconds: attachment.durationSeconds,
         uploadedAt: now,
         uploadedByMemberId: actor._id,
         revisionNote: attachment.revisionNote,
@@ -283,7 +423,11 @@ export const publishBatch = mutation({
       await ctx.db.patch("pieceAttachments", attachmentId, {
         currentVersionId: versionId,
       });
+      if (pendingUploadId) {
+        await ctx.db.delete("pendingPieceUploads", pendingUploadId);
+      }
       createdIds.push(attachmentId);
+      insertedAttachmentCount += 1;
     }
     return createdIds;
   },
@@ -387,7 +531,7 @@ export const discardUnreferencedStorage = mutation({
   args: { storageIds: v.array(v.id("_storage")) },
   returns: v.null(),
   handler: async (ctx, { storageIds }) => {
-    await requireCan(ctx, "manageLibrary");
+    const actor = await requireCan(ctx, "manageLibrary");
     if (storageIds.length > MAX_STORAGE_IDS_TO_DISCARD) {
       throw new Error(
         `At most ${MAX_STORAGE_IDS_TO_DISCARD} storage files can be discarded at once`,
@@ -404,6 +548,14 @@ export const discardUnreferencedStorage = mutation({
           .take(1);
         return versions.length > 0;
       }),
+    );
+    const pendingUploads = await Promise.all(
+      storageIds.map(async (storageId) =>
+        await ctx.db
+          .query("pendingPieceUploads")
+          .withIndex("by_storage_id", (q) => q.eq("storageId", storageId))
+          .unique(),
+      ),
     );
     const choirSettings = await ctx.db.query("choirSettings").take(2);
     if (choirSettings.length > 1) {
@@ -432,7 +584,21 @@ export const discardUnreferencedStorage = mutation({
       ) {
         throw new Error("Storage file is referenced outside Piece attachments");
       }
+      const pendingUpload = pendingUploads[index];
+      if (
+        pendingUpload &&
+        pendingUpload.uploadedByMemberId !== actor._id
+      ) {
+        throw new Error("Cannot discard another Member's pending upload");
+      }
     }
+    await Promise.all(
+      pendingUploads.map(async (pendingUpload) => {
+        if (pendingUpload) {
+          await ctx.db.delete("pendingPieceUploads", pendingUpload._id);
+        }
+      }),
+    );
     await Promise.all(
       storageIds.map((storageId) => ctx.storage.delete(storageId)),
     );

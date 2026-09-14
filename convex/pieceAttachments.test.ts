@@ -112,6 +112,7 @@ test("a Director publishes a batch atomically and every Member can list it", asy
           purpose: "partRehearsal",
           voicePartIds: [tenorPartId],
           isPrimary: false,
+          durationSeconds: 62.5,
           revisionNote: "Initial review",
         },
       ],
@@ -132,6 +133,7 @@ test("a Director publishes a batch atomically and every Member can list it", asy
     currentVersion: { revisionNumber: 1, originalFilename: "ave-verum.pdf" },
   });
   expect(listed[0].url).not.toBeNull();
+  expect(listed[1].currentVersion.durationSeconds).toBe(62.5);
   const managementDetail = await t
     .withIdentity(directorIdentity)
     .query(api.pieceAttachments.getManagementDetail, { pieceId });
@@ -152,6 +154,14 @@ test("management detail and all management mutations refuse a Chorister", async 
     t.query(api.pieceAttachments.listActive, { pieceId }),
   ).rejects.toThrow(/Not signed in/);
 
+  await expect(
+    t
+      .withIdentity(choristerIdentity)
+      .mutation(api.pieceAttachments.registerPendingUpload, {
+        pieceId,
+        storageId,
+      }),
+  ).rejects.toThrow(/Requires capability: manageLibrary/);
   await expect(
     t
       .withIdentity(choristerIdentity)
@@ -177,6 +187,70 @@ test("management detail and all management mutations refuse a Chorister", async 
         storageIds: [storageId],
       }),
   ).rejects.toThrow(/Requires capability: manageLibrary/);
+});
+
+test("pending uploads register idempotently and are consumed by publication", async () => {
+  const { t, pieceId, otherPieceId } = await setup();
+  const storageId = await store(t);
+  const director = t.withIdentity(directorIdentity);
+
+  await director.mutation(api.pieceAttachments.registerPendingUpload, {
+    pieceId,
+    storageId,
+  });
+  await director.mutation(api.pieceAttachments.registerPendingUpload, {
+    pieceId,
+    storageId,
+  });
+  expect(
+    await t.run(async (ctx) =>
+      await ctx.db.query("pendingPieceUploads").take(2),
+    ),
+  ).toHaveLength(1);
+
+  await expect(
+    director.mutation(api.pieceAttachments.registerPendingUpload, {
+      pieceId: otherPieceId,
+      storageId,
+    }),
+  ).rejects.toThrow(/another batch/);
+
+  await director.mutation(api.pieceAttachments.publishBatch, {
+    pieceId,
+    attachments: [fullScore(storageId)],
+  });
+  expect(
+    await t.run(async (ctx) =>
+      await ctx.db.query("pendingPieceUploads").take(2),
+    ),
+  ).toHaveLength(0);
+});
+
+test("pending upload cleanup is restricted to its uploader", async () => {
+  const { t, pieceId } = await setup();
+  const storageId = await store(t, "pending");
+  const director = t.withIdentity(directorIdentity);
+  const admin = t.withIdentity(adminIdentity);
+
+  await director.mutation(api.pieceAttachments.registerPendingUpload, {
+    pieceId,
+    storageId,
+  });
+  await expect(
+    admin.mutation(api.pieceAttachments.discardUnreferencedStorage, {
+      storageIds: [storageId],
+    }),
+  ).rejects.toThrow(/another Member's pending upload/);
+
+  await director.mutation(api.pieceAttachments.discardUnreferencedStorage, {
+    storageIds: [storageId],
+  });
+  expect(
+    await t.run(async (ctx) =>
+      await ctx.db.query("pendingPieceUploads").take(2),
+    ),
+  ).toHaveLength(0);
+  expect(await t.run(async (ctx) => await ctx.storage.getUrl(storageId))).toBeNull();
 });
 
 test("publication rejects bad storage and policy violations without metadata writes", async () => {
@@ -464,6 +538,130 @@ test("publication refuses a storage object already used by a revision", async ()
       attachments: [{ ...fullScore(storageId), isPrimary: false }],
     }),
   ).rejects.toThrow(/already referenced by a revision/);
+});
+
+test("a filename collision can publish atomically as a new revision", async () => {
+  const { t, pieceId } = await setup();
+  const firstStorageId = await store(t, "first revision");
+  const replacementStorageId = await store(t, "replacement revision");
+  const director = t.withIdentity(directorIdentity);
+  const [attachmentId] = await director.mutation(
+    api.pieceAttachments.publishBatch,
+    {
+      pieceId,
+      attachments: [fullScore(firstStorageId)],
+    },
+  );
+  await director.mutation(api.pieceAttachments.registerPendingUpload, {
+    pieceId,
+    storageId: replacementStorageId,
+  });
+
+  const publishedIds = await director.mutation(
+    api.pieceAttachments.publishBatch,
+    {
+      pieceId,
+      attachments: [
+        {
+          ...fullScore(replacementStorageId),
+          originalFilename: "ave-verum-revised.pdf",
+          replaceAttachmentId: attachmentId,
+        },
+      ],
+    },
+  );
+
+  expect(publishedIds).toEqual([attachmentId]);
+  const detail = await director.query(
+    api.pieceAttachments.getManagementDetail,
+    { pieceId },
+  );
+  expect(detail.attachments).toHaveLength(1);
+  expect(detail.attachments[0].currentVersion).toMatchObject({
+    revisionNumber: 2,
+    originalFilename: "ave-verum-revised.pdf",
+  });
+  const versions = await t.run(async (ctx) =>
+    await ctx.db
+      .query("pieceFileVersions")
+      .withIndex("by_attachment_id_and_revision_number", (q) =>
+        q.eq("attachmentId", attachmentId),
+      )
+      .take(3),
+  );
+  expect(versions.map((version) => version.revisionNumber)).toEqual([1, 2]);
+  expect(
+    await t.run(async (ctx) =>
+      await ctx.db.query("pendingPieceUploads").take(1),
+    ),
+  ).toHaveLength(0);
+});
+
+test("publication rejects empty files and unsafe executable extensions", async () => {
+  const { t, pieceId } = await setup();
+  const emptyId = await store(t, "");
+  const exeId = await store(t, "not actually empty");
+  const director = t.withIdentity(directorIdentity);
+
+  await expect(
+    director.mutation(api.pieceAttachments.publishBatch, {
+      pieceId,
+      attachments: [{ ...fullScore(emptyId), originalFilename: "empty.pdf" }],
+    }),
+  ).rejects.toThrow(/empty/);
+
+  await expect(
+    director.mutation(api.pieceAttachments.publishBatch, {
+      pieceId,
+      attachments: [
+        { ...fullScore(exeId), originalFilename: "installer.exe" },
+      ],
+    }),
+  ).rejects.toThrow(/Executable files are not allowed/);
+
+  const attachments = await t.run(
+    async (ctx) => await ctx.db.query("pieceAttachments").collect(),
+  );
+  const versions = await t.run(
+    async (ctx) => await ctx.db.query("pieceFileVersions").collect(),
+  );
+  expect(attachments).toHaveLength(0);
+  expect(versions).toHaveLength(0);
+});
+
+test("upload as new version must keep the replaced attachment's format", async () => {
+  const { t, pieceId } = await setup();
+  const firstStorageId = await store(t, "first revision");
+  const wrongFormatStorageId = await store(t, "wrong format replacement");
+  const director = t.withIdentity(directorIdentity);
+  const [attachmentId] = await director.mutation(
+    api.pieceAttachments.publishBatch,
+    { pieceId, attachments: [fullScore(firstStorageId)] },
+  );
+
+  await expect(
+    director.mutation(api.pieceAttachments.publishBatch, {
+      pieceId,
+      attachments: [
+        {
+          ...fullScore(wrongFormatStorageId),
+          format: "musescore",
+          originalFilename: "ave-verum.mscz",
+          replaceAttachmentId: attachmentId,
+        },
+      ],
+    }),
+  ).rejects.toThrow(/same file format/);
+
+  const versions = await t.run(async (ctx) =>
+    await ctx.db
+      .query("pieceFileVersions")
+      .withIndex("by_attachment_id_and_revision_number", (q) =>
+        q.eq("attachmentId", attachmentId),
+      )
+      .take(3),
+  );
+  expect(versions.map((version) => version.revisionNumber)).toEqual([1]);
 });
 
 test("discard refuses referenced storage and deletes an unreferenced upload", async () => {

@@ -214,3 +214,42 @@ export function requireCurrentRevisionBelongsToAttachment(
     throw new Error("Current revision belongs to another attachment");
   }
 }
+
+// Kept in sync with src/lib/attachmentClassification.ts's EXECUTABLE_EXTENSIONS.
+// convex/ cannot import from src/, so this list is deliberately duplicated
+// rather than shared — the client-side classifier is a UX nicety, this is
+// the actual security boundary.
+const EXECUTABLE_EXTENSIONS = new Set([
+  "exe",
+  "com",
+  "bat",
+  "cmd",
+  "msi",
+  "dll",
+  "scr",
+  "ps1",
+  "vbs",
+  "js",
+  "jar",
+  "sh",
+  "app",
+  "dmg",
+]);
+
+function extensionOf(filename: string): string {
+  const match = /\.([^.]+)$/u.exec(filename.trim().toLowerCase());
+  return match?.[1] ?? "";
+}
+
+export function isExecutableFilename(filename: string): boolean {
+  return EXECUTABLE_EXTENSIONS.has(extensionOf(filename));
+}
+
+export function requireSafeUpload(filename: string, size: number): void {
+  if (size <= 0) {
+    throw new Error("Uploaded file is empty");
+  }
+  if (isExecutableFilename(filename)) {
+    throw new Error("Executable files are not allowed as Piece attachments");
+  }
+}
