@@ -336,3 +336,134 @@ test("every mutation on a closed Poll throws", async () => {
     asDirector.mutation(api.polls.removeCandidateDate, { candidateDateId: dates[0]._id }),
   ).rejects.toThrow(readOnly);
 });
+
+test("a Chorister may record an Availability on an open Poll", async () => {
+  const t = convexTest(schema, modules);
+  const { choristerId } = await seedMembers(t);
+  const pollId = await t.withIdentity(directorIdentity).mutation(api.polls.create, {
+    title: "Spring Concert",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+  const dates = (await t.withIdentity(directorIdentity).query(api.polls.get, { pollId }))!.candidateDates;
+
+  await t
+    .withIdentity(choristerIdentity)
+    .mutation(api.polls.setAvailability, { candidateDateId: dates[0]._id, value: "if_needed" });
+
+  const stored = await t.run(async (ctx) => ctx.db.query("availabilities").collect());
+  expect(stored).toMatchObject([{ memberId: choristerId, value: "if_needed" }]);
+});
+
+test("changing an answer patches the one row instead of adding a second", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asChorister = t.withIdentity(choristerIdentity);
+  const pollId = await t.withIdentity(directorIdentity).mutation(api.polls.create, {
+    title: "Spring Concert",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+  const dates = (await asChorister.query(api.polls.get, { pollId }))!.candidateDates;
+
+  await asChorister.mutation(api.polls.setAvailability, { candidateDateId: dates[0]._id, value: "available" });
+  await asChorister.mutation(api.polls.setAvailability, { candidateDateId: dates[0]._id, value: "unavailable" });
+
+  const stored = await t.run(async (ctx) => ctx.db.query("availabilities").collect());
+  expect(stored).toHaveLength(1);
+  expect(stored[0].value).toBe("unavailable");
+});
+
+test("setAvailability refuses a closed Poll", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Settled",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+  const dates = (await asDirector.query(api.polls.get, { pollId }))!.candidateDates;
+  await closePoll(t, pollId);
+
+  await expect(
+    t.withIdentity(choristerIdentity).mutation(api.polls.setAvailability, {
+      candidateDateId: dates[0]._id,
+      value: "available",
+    }),
+  ).rejects.toThrow(/closed Poll is read-only/);
+});
+
+test("grid names every Member, including the ones who have not answered", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId, choristerId } = await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Two options",
+    candidateDates: [{ startsAt: MARCH_1 }, { startsAt: MARCH_1 + DAY }],
+  });
+  const dates = (await asDirector.query(api.polls.get, { pollId }))!.candidateDates;
+
+  await t
+    .withIdentity(choristerIdentity)
+    .mutation(api.polls.setAvailability, { candidateDateId: dates[0]._id, value: "available" });
+
+  const grid = await t.withIdentity(choristerIdentity).query(api.polls.grid, { pollId });
+  expect(grid?.rows).toEqual([
+    { memberId: choristerId, name: "Chris Chorister", isViewer: true, values: ["available", null] },
+    { memberId: directorId, name: "Dana Director", isViewer: false, values: [null, null] },
+  ]);
+});
+
+test("grid tallies each value separately and counts who is still missing", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Two options",
+    candidateDates: [{ startsAt: MARCH_1 }, { startsAt: MARCH_1 + DAY }],
+  });
+  const dates = (await asDirector.query(api.polls.get, { pollId }))!.candidateDates;
+
+  await asDirector.mutation(api.polls.setAvailability, { candidateDateId: dates[0]._id, value: "available" });
+  await t
+    .withIdentity(choristerIdentity)
+    .mutation(api.polls.setAvailability, { candidateDateId: dates[0]._id, value: "if_needed" });
+  await t
+    .withIdentity(choristerIdentity)
+    .mutation(api.polls.setAvailability, { candidateDateId: dates[1]._id, value: "unavailable" });
+
+  const grid = await asDirector.query(api.polls.grid, { pollId });
+  expect(grid?.tallies).toEqual([
+    { available: 1, unavailable: 0, if_needed: 1, notAnswered: 0 },
+    { available: 0, unavailable: 1, if_needed: 0, notAnswered: 1 },
+  ]);
+});
+
+test("grid keeps its columns in the Poll's displayOrder", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Three options",
+    candidateDates: [{ startsAt: MARCH_1 + 2 * DAY }, { startsAt: MARCH_1 }, { startsAt: MARCH_1 + DAY }],
+  });
+
+  const grid = await asDirector.query(api.polls.grid, { pollId });
+  expect(grid?.candidateDates.map((c) => c.startsAt)).toEqual([MARCH_1 + 2 * DAY, MARCH_1, MARCH_1 + DAY]);
+});
+
+test("listOpen gives every Member the open Polls and leaves closed ones out", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const closed = await asDirector.mutation(api.polls.create, {
+    title: "Last year's concert",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+  await closePoll(t, closed);
+  const open = await asDirector.mutation(api.polls.create, {
+    title: "This year's concert",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+
+  const polls = await t.withIdentity(choristerIdentity).query(api.polls.listOpen, {});
+  expect(polls.map((p) => p._id)).toEqual([open]);
+});
