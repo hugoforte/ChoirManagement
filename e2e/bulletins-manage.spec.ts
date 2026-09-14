@@ -44,3 +44,43 @@ test("director can draft a Bulletin, publish it, and edit it afterwards", async 
   await page.goto("/bulletins/manage");
   await expect(page.getByRole("link", { name: `${title} (updated)` })).toBeVisible();
 });
+
+// The Piece reverse lookup (#81) end to end: a Remark left while composing
+// a Bulletin has to come back out on the Piece it names, which is the whole
+// reason a Remark references a Piece structurally.
+test("a Remark on a published Bulletin shows up on its Piece", async ({ page, context }) => {
+  await setupClerkTestingToken({ context });
+
+  const title = `E2E Remark Bulletin ${Date.now()}`;
+  const remark = `Watch the cutoff at bar 48 (${Date.now()}).`;
+
+  // Take whichever Piece the preview seed created rather than naming one —
+  // the spec needs a real Piece id to navigate back to, and the picker
+  // lists the Library by title.
+  await page.goto("/library");
+  const pieceLink = page.locator('a[href^="/library/"]:not([href="/library/manage"])').first();
+  await expect(pieceLink).toBeVisible();
+  const pieceTitle = (await pieceLink.innerText()).trim();
+  await pieceLink.click();
+  await page.waitForURL(/\/library\/.+/);
+  const pieceUrl = page.url();
+
+  await page.goto("/bulletins/manage");
+  await page.getByPlaceholder("New Bulletin title").fill(title);
+  await page.getByRole("button", { name: "Add" }).click();
+  await page.getByRole("link", { name: title }).click();
+  await page.waitForURL(/\/bulletins\/manage\/.+/);
+
+  await page.getByLabel("Piece").selectOption({ label: pieceTitle });
+  await page.getByLabel("Remark", { exact: true }).fill(remark);
+  await page.getByRole("button", { name: "Add Remark" }).click();
+  await expect(page.getByLabel(`Remark about ${pieceTitle}`)).toHaveValue(remark);
+
+  await page.getByRole("button", { name: "Publish" }).click();
+  await expect(page.getByText(/^Published /)).toBeVisible();
+
+  await page.goto(pieceUrl);
+  await expect(page.getByRole("heading", { name: "Remarks from Bulletins" })).toBeVisible();
+  await expect(page.getByText(remark)).toBeVisible();
+  await expect(page.getByRole("link", { name: title })).toBeVisible();
+});
