@@ -41,6 +41,33 @@ function formatUpdatedAt(timestamp: number): string {
   }).format(new Date(timestamp));
 }
 
+function AttachmentMetadata({ attachment }: { attachment: PresentedAttachment }) {
+  return (
+    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
+      {attachment.partLabel && <span>Parts: {attachment.partLabel}</span>}
+      {attachment.durationSeconds !== undefined && attachment.durationSeconds !== null && (
+        <span>Duration: {formatDuration(attachment.durationSeconds)}</span>
+      )}
+      <time dateTime={new Date(attachment.updatedAt).toISOString()}>
+        Updated {formatUpdatedAt(attachment.updatedAt)}
+      </time>
+    </div>
+  );
+}
+
+function AttachmentDownload({ attachment }: { attachment: PresentedAttachment }) {
+  if (!attachment.download.available) return null;
+  return (
+    <a
+      href={attachment.download.url ?? undefined}
+      download={attachment.downloadName}
+      className={linkClass}
+    >
+      Download {attachment.downloadName}
+    </a>
+  );
+}
+
 function AttachmentItem({ attachment }: { attachment: PresentedAttachment }) {
   const preview = attachment.preview;
   const isDownloadOnly = preview.kind === "download";
@@ -50,15 +77,7 @@ function AttachmentItem({ attachment }: { attachment: PresentedAttachment }) {
       <h4 className="text-sm font-medium text-stone-900 dark:text-stone-100">
         {attachment.displayName}
       </h4>
-      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
-        {attachment.partLabel && <span>Parts: {attachment.partLabel}</span>}
-        {attachment.durationSeconds !== undefined && attachment.durationSeconds !== null && (
-          <span>Duration: {formatDuration(attachment.durationSeconds)}</span>
-        )}
-        <time dateTime={new Date(attachment.updatedAt).toISOString()}>
-          Updated {formatUpdatedAt(attachment.updatedAt)}
-        </time>
-      </div>
+      <AttachmentMetadata attachment={attachment} />
 
       {!preview.available ? (
         <p className="mt-3 text-sm text-amber-700 dark:text-amber-300" role="status">
@@ -89,11 +108,83 @@ function AttachmentItem({ attachment }: { attachment: PresentedAttachment }) {
             <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">Download only</p>
           )}
           <p className="mt-3">
-            <a href={attachment.download.url ?? undefined} download={attachment.downloadName} className={linkClass}>
-              Download {attachment.downloadName}
-            </a>
+            <AttachmentDownload attachment={attachment} />
           </p>
         </>
+      )}
+    </article>
+  );
+}
+
+function MainScoreWorkspace({ attachment }: { attachment: PresentedAttachment }) {
+  const preview = attachment.preview;
+  return (
+    <section
+      data-testid="score-workspace"
+      aria-labelledby="main-score-heading"
+      className="min-w-0 overflow-hidden rounded-xl border border-stone-200 bg-stone-100 dark:border-stone-700 dark:bg-stone-950"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3 dark:border-stone-700 dark:bg-stone-900">
+        <div className="min-w-0">
+          <h2 id="main-score-heading" className="font-semibold text-stone-900 dark:text-stone-100">
+            Main score
+          </h2>
+          <p className="truncate text-sm text-stone-500 dark:text-stone-400">{attachment.displayName}</p>
+        </div>
+        {preview.available && (
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+            <a href={preview.url ?? undefined} className={linkClass} target="_blank" rel="noreferrer">
+              Open main score
+            </a>
+            <AttachmentDownload attachment={attachment} />
+          </div>
+        )}
+      </div>
+      {!preview.available ? (
+        <p className="m-4 text-sm text-amber-700 dark:text-amber-300" role="status">
+          This file is currently unavailable.
+        </p>
+      ) : preview.kind === "pdf" ? (
+        <iframe
+          src={preview.url ?? undefined}
+          className="h-[68vh] min-h-[30rem] w-full bg-white"
+          title={`Preview of ${attachment.displayName}`}
+        />
+      ) : (
+        <div className="p-4">
+          <AttachmentItem attachment={attachment} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AudioTrack({ attachment }: { attachment: PresentedAttachment }) {
+  return (
+    <article className="rounded-lg border border-stone-200 bg-white p-3 dark:border-stone-700 dark:bg-stone-900">
+      <h3 className="text-sm font-medium text-stone-900 dark:text-stone-100">
+        {attachment.displayName}
+      </h3>
+      <AttachmentMetadata attachment={attachment} />
+      {attachment.preview.available ? (
+        <>
+          <audio
+            aria-label={`Play ${attachment.displayName}`}
+            controls
+            preload="metadata"
+            src={attachment.preview.url ?? undefined}
+            className="mt-3 w-full"
+          >
+            Your browser does not support audio previews.
+          </audio>
+          <p className="mt-2 text-xs">
+            <AttachmentDownload attachment={attachment} />
+          </p>
+        </>
+      ) : (
+        <p className="mt-3 text-sm text-amber-700 dark:text-amber-300" role="status">
+          This file is currently unavailable.
+        </p>
       )}
     </article>
   );
@@ -143,7 +234,28 @@ function PieceDetailContent() {
     })),
     selectedPartId,
   });
-  const hasAttachments = presentation.primaryAction !== null || presentation.groups.length > 0;
+  const audioAttachments = presentation.groups
+    .flatMap((group) => group.attachments)
+    .filter((attachment) => attachment.preview.kind === "audio");
+  const secondaryGroups = presentation.groups.flatMap((group) => {
+    const attachments = group.attachments.filter(
+      (attachment) => attachment.preview.kind !== "audio",
+    );
+    if (attachments.length === 0) return [];
+    const partSections = group.partSections
+      ?.map((section) => ({
+        ...section,
+        attachments: section.attachments.filter(
+          (attachment) => attachment.preview.kind !== "audio",
+        ),
+      }))
+      .filter((section) => section.attachments.length > 0);
+    return [{ ...group, attachments, partSections }];
+  });
+  const hasAttachments =
+    presentation.primaryAction !== null ||
+    audioAttachments.length > 0 ||
+    secondaryGroups.length > 0;
 
   return (
     <div className="rounded-xl border border-stone-200 bg-white p-6 dark:border-stone-800 dark:bg-stone-900">
@@ -158,83 +270,117 @@ function PieceDetailContent() {
         </p>
       )}
 
-      <h2 className="mt-6 text-xs font-semibold tracking-wide text-stone-500 dark:text-stone-400">Files</h2>
-      {presentation.availablePartFilters.length > 0 && (
-        <fieldset className="mt-3">
-          <legend className="sr-only">Filter files by voice part</legend>
-          <div className="flex flex-wrap gap-2" aria-label="Filter files by voice part">
-            <button
-              type="button"
-              aria-pressed={selectedPartId === null}
-              onClick={() => setSelectedPartId(null)}
-              className="rounded-md border border-stone-300 px-3 py-1 text-sm text-stone-700 dark:border-stone-600 dark:text-stone-200"
-            >
-              All parts
-            </button>
-            {presentation.availablePartFilters.map((part) => (
-              <button
-                key={part.id}
-                type="button"
-                aria-pressed={selectedPartId === part.id}
-                onClick={() => setSelectedPartId(part.id)}
-                className="rounded-md border border-stone-300 px-3 py-1 text-sm text-stone-700 dark:border-stone-600 dark:text-stone-200"
-              >
-                {part.name}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-      )}
-
       {!hasAttachments ? (
-        <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">No files attached.</p>
+        <p className="mt-6 text-sm text-stone-500 dark:text-stone-400">No files attached.</p>
       ) : (
-        <div className="mt-4 space-y-6">
-          {presentation.primaryAction && (
-            <section aria-labelledby="main-score-heading">
-              <h3 id="main-score-heading" className="text-base font-semibold text-stone-900 dark:text-stone-100">
-                Main score
-              </h3>
-              {presentation.primaryAction.attachment.preview.available && (
-                <p className="mt-2">
-                  <a href={presentation.primaryAction.attachment.preview.url ?? undefined} className={linkClass}>
-                    {presentation.primaryAction.label}
-                  </a>
-                </p>
-              )}
-              <div className="mt-3">
-                <AttachmentItem attachment={presentation.primaryAction.attachment} />
-              </div>
-            </section>
-          )}
+        <div className="mt-6 space-y-6">
+          <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+            {presentation.primaryAction ? (
+              <MainScoreWorkspace attachment={presentation.primaryAction.attachment} />
+            ) : (
+              <section className="flex min-h-64 items-center justify-center rounded-xl border border-dashed border-stone-300 bg-stone-50 p-6 text-center dark:border-stone-700 dark:bg-stone-950">
+                <div>
+                  <h2 className="font-semibold text-stone-900 dark:text-stone-100">Main score</h2>
+                  <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+                    No primary score has been selected for this Piece.
+                  </p>
+                </div>
+              </section>
+            )}
 
-          {presentation.groups.map((group) => (
-            <section key={group.key} aria-labelledby={`${group.key}-heading`}>
-              <h3 id={`${group.key}-heading`} className="text-base font-semibold text-stone-900 dark:text-stone-100">
-                {group.label}
-              </h3>
-              {group.partSections ? (
-                <div className="mt-3 space-y-4">
-                  {group.partSections.map((section) => (
-                    <section key={section.part?.id ?? "unassigned"} aria-label={`${section.label} rehearsal files`}>
-                      <h4 className="text-sm font-medium text-stone-700 dark:text-stone-300">{section.label}</h4>
-                      <div className="mt-2 space-y-3">
-                        {section.attachments.map((attachment) => (
+            <aside data-testid="audio-rail" className="space-y-4 xl:sticky xl:top-6">
+              {presentation.availablePartFilters.length > 0 && (
+                <fieldset className="rounded-xl border border-stone-200 bg-stone-50 p-3 dark:border-stone-700 dark:bg-stone-950">
+                  <legend className="px-1 text-sm font-semibold text-stone-900 dark:text-stone-100">
+                    Parts
+                  </legend>
+                  <div className="mt-2 flex flex-wrap gap-2" aria-label="Filter files by voice part">
+                    <button
+                      type="button"
+                      aria-pressed={selectedPartId === null}
+                      onClick={() => setSelectedPartId(null)}
+                      className="rounded-md border border-stone-300 px-3 py-1 text-sm text-stone-700 dark:border-stone-600 dark:text-stone-200"
+                    >
+                      All parts
+                    </button>
+                    {presentation.availablePartFilters.map((part) => (
+                      <button
+                        key={part.id}
+                        type="button"
+                        aria-pressed={selectedPartId === part.id}
+                        onClick={() => setSelectedPartId(part.id)}
+                        className="rounded-md border border-stone-300 px-3 py-1 text-sm text-stone-700 dark:border-stone-600 dark:text-stone-200"
+                      >
+                        {part.name}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+
+              <section aria-labelledby="audio-tracks-heading" className="rounded-xl border border-stone-200 bg-stone-50 p-3 dark:border-stone-700 dark:bg-stone-950">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 id="audio-tracks-heading" className="font-semibold text-stone-900 dark:text-stone-100">
+                    Audio tracks
+                  </h2>
+                  <span className="rounded-full bg-stone-200 px-2 py-0.5 text-xs font-medium text-stone-600 dark:bg-stone-800 dark:text-stone-300">
+                    {audioAttachments.length}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                  Each player is independent, so you can play several tracks together.
+                </p>
+                {audioAttachments.length > 0 ? (
+                  <div className="mt-3 space-y-3">
+                    {audioAttachments.map((attachment) => (
+                      <AudioTrack key={attachment.id} attachment={attachment} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">
+                    No audio tracks for this selection.
+                  </p>
+                )}
+              </section>
+            </aside>
+          </div>
+
+          {secondaryGroups.length > 0 && (
+            <section aria-labelledby="other-files-heading">
+              <h2 id="other-files-heading" className="text-base font-semibold text-stone-900 dark:text-stone-100">
+                Other files
+              </h2>
+              <div className="mt-3 grid gap-5 lg:grid-cols-2">
+                {secondaryGroups.map((group) => (
+                  <section key={group.key} aria-labelledby={`${group.key}-heading`}>
+                    <h3 id={`${group.key}-heading`} className="text-sm font-semibold text-stone-700 dark:text-stone-300">
+                      {group.label}
+                    </h3>
+                    {group.partSections ? (
+                      <div className="mt-3 space-y-4">
+                        {group.partSections.map((section) => (
+                          <section key={section.part?.id ?? "unassigned"} aria-label={`${section.label} rehearsal files`}>
+                            <h4 className="text-sm font-medium text-stone-700 dark:text-stone-300">{section.label}</h4>
+                            <div className="mt-2 space-y-3">
+                              {section.attachments.map((attachment) => (
+                                <AttachmentItem key={attachment.id} attachment={attachment} />
+                              ))}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-3 space-y-3">
+                        {group.attachments.map((attachment) => (
                           <AttachmentItem key={attachment.id} attachment={attachment} />
                         ))}
                       </div>
-                    </section>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-3 space-y-3">
-                  {group.attachments.map((attachment) => (
-                    <AttachmentItem key={attachment.id} attachment={attachment} />
-                  ))}
-                </div>
-              )}
+                    )}
+                  </section>
+                ))}
+              </div>
             </section>
-          ))}
+          )}
         </div>
       )}
     </div>

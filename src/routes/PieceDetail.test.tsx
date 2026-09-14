@@ -157,18 +157,21 @@ describe("PieceDetail", () => {
       ],
     };
 
-    const { container } = renderDetail();
+    renderDetail();
 
     expect(screen.getByRole("link", { name: "Open main score" })).toHaveAttribute(
       "href",
       "https://files.example/main",
     );
     expect(screen.getByRole("heading", { name: "Scores & text" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Rehearsal" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Audio tracks" })).toBeInTheDocument();
     expect(screen.getByText("Parts: Alto + Tenor")).toBeInTheDocument();
     expect(screen.getByText("Duration: 1:32")).toBeInTheDocument();
-    expect(container.querySelector("iframe[title='Preview of Main score.pdf']")).not.toBeNull();
-    expect(container.querySelector("audio")).not.toBeNull();
+    const scoreWorkspace = screen.getByTestId("score-workspace");
+    expect(scoreWorkspace.querySelector("iframe[title='Preview of Main score.pdf']")).not.toBeNull();
+    const audioPlayers = screen.getByTestId("audio-rail").querySelectorAll("audio");
+    expect(audioPlayers).toHaveLength(2);
+    expect([...audioPlayers].every((player) => player.controls)).toBe(true);
     expect(screen.getByRole("img", { name: "Preview of Cover image.png" })).toHaveAttribute(
       "src",
       "https://files.example/cover",
@@ -186,6 +189,7 @@ describe("PieceDetail", () => {
     expect(screen.getByRole("button", { name: "Soprano" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("Soprano rehearsal.mp3")).toBeInTheDocument();
     expect(screen.queryByText("Alto + Tenor rehearsal.mp3")).not.toBeInTheDocument();
+    expect(screen.getByTestId("audio-rail").querySelectorAll("audio")).toHaveLength(1);
     expect(screen.getByText("Main score.pdf")).toBeInTheDocument();
   });
 });
