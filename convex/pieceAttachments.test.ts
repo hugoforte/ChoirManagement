@@ -656,3 +656,41 @@ test("discard refuses referenced storage and deletes an unreferenced upload", as
   );
   expect(discardedUrl).toBeNull();
 });
+
+test("resolveCurrentAttachments degrades an over-limit voicePartIds list instead of throwing", async () => {
+  const { t, pieceId, tenorPartId } = await setup();
+  const pdfId = await store(t);
+
+  await t.run(async (ctx) => {
+    const attachmentId = await ctx.db.insert("pieceAttachments", {
+      pieceId,
+      format: "pdf",
+      purpose: "partScore",
+      // Above the write-time MAX_VOICE_PARTS_PER_ATTACHMENT cap of 20 — only
+      // reachable by data that predates or bypasses `validateVoiceParts`,
+      // but the read path must not crash the whole Member page over it.
+      voicePartIds: Array.from({ length: 25 }, () => tenorPartId),
+      displayOrder: 0,
+      isPrimary: false,
+      status: "active",
+      updatedAt: 1,
+    });
+    const versionId = await ctx.db.insert("pieceFileVersions", {
+      attachmentId,
+      storageId: pdfId,
+      revisionNumber: 1,
+      originalFilename: "tenor.pdf",
+      size: 3,
+      sha256: "abc",
+      uploadedAt: 1,
+    });
+    await ctx.db.patch("pieceAttachments", attachmentId, { currentVersionId: versionId });
+  });
+
+  const memberDetail = await t
+    .withIdentity(choristerIdentity)
+    .query(api.pieceAttachments.getMemberDetail, { pieceId });
+  if (!memberDetail) throw new Error("Expected Member Piece detail");
+  expect(memberDetail.attachments).toHaveLength(1);
+  expect(memberDetail.attachments[0].voiceParts).toHaveLength(20);
+});

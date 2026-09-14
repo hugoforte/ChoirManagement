@@ -82,14 +82,13 @@ async function resolveCurrentAttachments(
       if (!currentVersion)
         throw new Error("Active attachment has no current revision");
       requireCurrentRevisionBelongsToAttachment(attachment._id, currentVersion);
-      if (attachment.voicePartIds.length > MAX_VOICE_PARTS_PER_ATTACHMENT) {
-        throw new Error("Attachment has too many voice parts");
-      }
+      // `validateVoiceParts` keeps this bounded on write, but degrade instead
+      // of throwing here: a read-path throw would crash the whole Member
+      // page over one attachment, so cap defensively and keep serving it.
+      const voicePartIds = attachment.voicePartIds.slice(0, MAX_VOICE_PARTS_PER_ATTACHMENT);
       const voiceParts = (
         await Promise.all(
-          attachment.voicePartIds.map((voicePartId) =>
-            ctx.db.get("voiceParts", voicePartId),
-          ),
+          voicePartIds.map((voicePartId) => ctx.db.get("voiceParts", voicePartId)),
         )
       ).filter((part): part is Doc<"voiceParts"> => part !== null);
       return {
