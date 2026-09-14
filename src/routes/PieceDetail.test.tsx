@@ -64,6 +64,7 @@ function attachment(
 }
 
 let memberDetail: unknown;
+let pieceRemarks: unknown;
 
 afterEach(() => {
   cleanup();
@@ -93,8 +94,13 @@ beforeEach(() => {
     },
     attachments: [],
   };
+  pieceRemarks = [];
+  // Compare with getFunctionName, never === : api.foo.bar is a fresh Proxy
+  // on every access (see src/test/convexMocks.ts).
   vi.mocked(useQuery).mockImplementation(((reference: Parameters<typeof getFunctionName>[0]) => {
-    expect(getFunctionName(reference)).toBe(getFunctionName(api.pieceAttachments.getMemberDetail));
+    const name = getFunctionName(reference);
+    if (name === getFunctionName(api.bulletinRemarks.listForPiece)) return pieceRemarks;
+    expect(name).toBe(getFunctionName(api.pieceAttachments.getMemberDetail));
     return memberDetail;
   }) as typeof useQuery);
 });
@@ -218,6 +224,43 @@ describe("PieceDetail", () => {
     expect(screen.getByText("No main score yet.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Main score" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Audio tracks" })).toBeInTheDocument();
+  });
+
+  it("lists Remarks from published Bulletins, dated and linked back to their Bulletin", () => {
+    pieceRemarks = [
+      {
+        _id: "remark-2",
+        bulletinId: "bulletin-2",
+        bulletinTitle: "Rehearsal 12 March",
+        publishedAt: new Date(2026, 2, 12, 21, 30).getTime(),
+        text: "Watch the tempo at bar 42.",
+      },
+      {
+        _id: "remark-1",
+        bulletinId: "bulletin-1",
+        bulletinTitle: "Rehearsal 5 March",
+        publishedAt: new Date(2026, 2, 5, 21, 15).getTime(),
+        text: "Sopranos, breathe before the reprise.",
+      },
+    ];
+
+    renderDetail();
+
+    expect(screen.getByRole("heading", { name: "Remarks from Bulletins" })).toBeInTheDocument();
+    expect(screen.getByText("Watch the tempo at bar 42.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Rehearsal 12 March" })).toHaveAttribute(
+      "href",
+      "/bulletins/bulletin-2",
+    );
+    expect(screen.getByText("2026-03-05 21:15")).toBeInTheDocument();
+  });
+
+  it("shows no Remarks section when the Piece has none from a published Bulletin", () => {
+    renderDetail();
+
+    expect(
+      screen.queryByRole("heading", { name: "Remarks from Bulletins" }),
+    ).not.toBeInTheDocument();
   });
 
   it("gives every PDF card in Other files an Open link next to Download", () => {

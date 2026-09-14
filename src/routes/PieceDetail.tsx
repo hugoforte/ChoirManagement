@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useQuery } from "convex/react";
 
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
+import { formatTimestamp } from "../lib/datetime";
 import {
   createAttachmentPresentation,
   type PresentedAttachment,
@@ -183,6 +184,44 @@ function MainScoreWorkspace({ attachment }: { attachment: PresentedAttachment })
   );
 }
 
+// The Piece reverse lookup (#81): what the Director has said about this
+// Piece, newest first. Only published Bulletins reach here — the query
+// filters drafts out, so a Remark written during a rehearsal stays
+// invisible until its Bulletin goes out.
+function BulletinRemarks({ pieceId }: { pieceId: Id<"pieces"> }) {
+  const remarks = useQuery(api.bulletinRemarks.listForPiece, { pieceId });
+  if (remarks === undefined || remarks.length === 0) return null;
+
+  return (
+    <section aria-labelledby="piece-remarks-heading" className="mt-6">
+      <h2
+        id="piece-remarks-heading"
+        className="text-base font-semibold text-stone-900 dark:text-stone-100"
+      >
+        Remarks from Bulletins
+      </h2>
+      <ul className="mt-3 space-y-3">
+        {remarks.map((remark) => (
+          <li key={remark._id}>
+            <p className="whitespace-pre-wrap text-sm text-stone-700 dark:text-stone-300">
+              {remark.text}
+            </p>
+            <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
+              <Link to={`/bulletins/${remark.bulletinId}`} className={linkClass}>
+                {remark.bulletinTitle}
+              </Link>
+              {" · "}
+              <time dateTime={new Date(remark.publishedAt).toISOString()}>
+                {formatTimestamp(remark.publishedAt)}
+              </time>
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function PieceDetailContent() {
   const { pieceId } = useParams<{ pieceId: string }>();
   const detail = useQuery(api.pieceAttachments.getMemberDetail, {
@@ -262,6 +301,8 @@ function PieceDetailContent() {
           </a>
         </p>
       )}
+
+      <BulletinRemarks pieceId={piece._id} />
 
       {presentation.availablePartFilters.length > 0 && (
         <fieldset className="mt-4 rounded-xl border border-stone-200 bg-stone-50 p-3 dark:border-stone-700 dark:bg-stone-950">
