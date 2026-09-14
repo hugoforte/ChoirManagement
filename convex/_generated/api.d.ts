@@ -18,6 +18,7 @@ import type * as lib_text from "../lib/text.js";
 import type * as members from "../members.js";
 import type * as pieceAttachments from "../pieceAttachments.js";
 import type * as pieces from "../pieces.js";
+import type * as polls from "../polls.js";
 import type * as public_ from "../public.js";
 import type * as seed from "../seed.js";
 import type * as voiceParts from "../voiceParts.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   members: typeof members;
   pieceAttachments: typeof pieceAttachments;
   pieces: typeof pieces;
+  polls: typeof polls;
   public: typeof public_;
   seed: typeof seed;
   voiceParts: typeof voiceParts;

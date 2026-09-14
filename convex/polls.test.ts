@@ -1,0 +1,338 @@
+/// <reference types="vite/client" />
+import { convexTest } from "convex-test";
+import { expect, test } from "vitest";
+
+import schema from "./schema";
+import { api } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
+
+const modules = import.meta.glob("./**/*.ts");
+
+const directorIdentity = { subject: "director_1", issuer: "https://example.clerk.accounts.dev" };
+const choristerIdentity = { subject: "chorister_1", issuer: "https://example.clerk.accounts.dev" };
+
+async function seedMembers(t: ReturnType<typeof convexTest>) {
+  const [directorId, choristerId] = await Promise.all([
+    t.run(async (ctx) =>
+      ctx.db.insert("members", {
+        clerkUserId: "https://example.clerk.accounts.dev|director_1",
+        name: "Dana Director",
+        email: "dana@example.com",
+        role: "director",
+      }),
+    ),
+    t.run(async (ctx) =>
+      ctx.db.insert("members", {
+        clerkUserId: "https://example.clerk.accounts.dev|chorister_1",
+        name: "Chris Chorister",
+        email: "chris@example.com",
+        role: "chorister",
+      }),
+    ),
+  ]);
+  return { directorId, choristerId };
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+const MARCH_1 = new Date(2026, 2, 1).getTime();
+
+async function closePoll(t: ReturnType<typeof convexTest>, pollId: Id<"polls">) {
+  // Closing is #87's mutation; here it is only setup for the read-only rule.
+  await t.run(async (ctx) => ctx.db.patch("polls", pollId, { status: "closed" }));
+}
+
+test("create refuses a Chorister", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+
+  await expect(
+    t.withIdentity(choristerIdentity).mutation(api.polls.create, {
+      title: "Not allowed",
+      candidateDates: [{ startsAt: MARCH_1 }],
+    }),
+  ).rejects.toThrow(/Requires capability: managePolls/);
+});
+
+test("create opens the Poll and records its author", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId } = await seedMembers(t);
+
+  const pollId = await t.withIdentity(directorIdentity).mutation(api.polls.create, {
+    title: "Spring Concert",
+    description: "Which Saturday works?",
+    location: "St Mary's",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+
+  const poll = await t.run(async (ctx) => ctx.db.get("polls", pollId));
+  expect(poll).toMatchObject({
+    title: "Spring Concert",
+    description: "Which Saturday works?",
+    location: "St Mary's",
+    status: "open",
+    createdByMemberId: directorId,
+  });
+});
+
+test("create leaves the deadline unset when none is given", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+
+  const pollId = await t.withIdentity(directorIdentity).mutation(api.polls.create, {
+    title: "No deadline",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+
+  const poll = await t.run(async (ctx) => ctx.db.get("polls", pollId));
+  expect(poll?.deadlineAt).toBeUndefined();
+});
+
+test("create stores a deadline when one is given", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+
+  const pollId = await t.withIdentity(directorIdentity).mutation(api.polls.create, {
+    title: "With deadline",
+    deadlineAt: MARCH_1 - 7 * DAY,
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+
+  const poll = await t.run(async (ctx) => ctx.db.get("polls", pollId));
+  expect(poll?.deadlineAt).toBe(MARCH_1 - 7 * DAY);
+});
+
+test("get returns Candidate Dates in displayOrder, not insertion order", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Three options",
+    candidateDates: [
+      { startsAt: MARCH_1 + 2 * DAY },
+      { startsAt: MARCH_1 },
+      { startsAt: MARCH_1 + 1 * DAY },
+    ],
+  });
+
+  const poll = await asDirector.query(api.polls.get, { pollId });
+  expect(poll?.candidateDates.map((c) => c.startsAt)).toEqual([
+    MARCH_1 + 2 * DAY,
+    MARCH_1,
+    MARCH_1 + 1 * DAY,
+  ]);
+  expect(poll?.candidateDates.map((c) => c.displayOrder)).toEqual([0, 1, 2]);
+});
+
+test("get is visible to every signed-in Member, not just a manager", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+
+  const pollId = await t.withIdentity(directorIdentity).mutation(api.polls.create, {
+    title: "Open to all",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+
+  const poll = await t.withIdentity(choristerIdentity).query(api.polls.get, { pollId });
+  expect(poll?.title).toBe("Open to all");
+});
+
+test("list returns open Polls before closed ones, and refuses a Chorister", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+
+  const closed = await asDirector.mutation(api.polls.create, {
+    title: "Last year's concert",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+  await closePoll(t, closed);
+  const open = await asDirector.mutation(api.polls.create, {
+    title: "This year's concert",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+
+  expect((await asDirector.query(api.polls.list, {})).map((p) => p._id)).toEqual([open, closed]);
+  await expect(t.withIdentity(choristerIdentity).query(api.polls.list, {})).rejects.toThrow(
+    /Requires capability: managePolls/,
+  );
+});
+
+test("addCandidateDate appends after the highest displayOrder", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Growing",
+    candidateDates: [{ startsAt: MARCH_1 }, { startsAt: MARCH_1 + DAY }],
+  });
+
+  await asDirector.mutation(api.polls.addCandidateDate, { pollId, startsAt: MARCH_1 + 2 * DAY });
+
+  const poll = await asDirector.query(api.polls.get, { pollId });
+  expect(poll?.candidateDates.map((c) => c.displayOrder)).toEqual([0, 1, 2]);
+  expect(poll?.candidateDates.at(-1)?.startsAt).toBe(MARCH_1 + 2 * DAY);
+});
+
+test("a Candidate Date's end must be after its start", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+
+  await expect(
+    asDirector.mutation(api.polls.create, {
+      title: "Backwards window",
+      candidateDates: [{ startsAt: MARCH_1, endsAt: MARCH_1 - 1 }],
+    }),
+  ).rejects.toThrow(/end must be after its start/);
+
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Fine",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+  await expect(
+    asDirector.mutation(api.polls.addCandidateDate, { pollId, startsAt: MARCH_1, endsAt: MARCH_1 }),
+  ).rejects.toThrow(/end must be after its start/);
+});
+
+test("reorderCandidateDates renumbers to the order it is given", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Reorder me",
+    candidateDates: [{ startsAt: MARCH_1 }, { startsAt: MARCH_1 + DAY }, { startsAt: MARCH_1 + 2 * DAY }],
+  });
+  const before = (await asDirector.query(api.polls.get, { pollId }))!.candidateDates;
+
+  await asDirector.mutation(api.polls.reorderCandidateDates, {
+    pollId,
+    candidateDateIds: [before[2]._id, before[0]._id, before[1]._id],
+  });
+
+  const after = await asDirector.query(api.polls.get, { pollId });
+  expect(after?.candidateDates.map((c) => c._id)).toEqual([before[2]._id, before[0]._id, before[1]._id]);
+});
+
+test("reorderCandidateDates rejects a list that is not the Poll's dates exactly once", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Reorder me",
+    candidateDates: [{ startsAt: MARCH_1 }, { startsAt: MARCH_1 + DAY }],
+  });
+  const dates = (await asDirector.query(api.polls.get, { pollId }))!.candidateDates;
+
+  await expect(
+    asDirector.mutation(api.polls.reorderCandidateDates, {
+      pollId,
+      candidateDateIds: [dates[0]._id, dates[0]._id],
+    }),
+  ).rejects.toThrow(/every Candidate Date on the Poll exactly once/);
+});
+
+test("removeCandidateDate also deletes that date's Availabilities", async () => {
+  const t = convexTest(schema, modules);
+  const { choristerId } = await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Two options",
+    candidateDates: [{ startsAt: MARCH_1 }, { startsAt: MARCH_1 + DAY }],
+  });
+  const dates = (await asDirector.query(api.polls.get, { pollId }))!.candidateDates;
+  // Responding is #85's mutation; the rows are seeded directly so the
+  // cascade can be asserted without it.
+  await t.run(async (ctx) => {
+    await ctx.db.insert("availabilities", {
+      candidateDateId: dates[0]._id,
+      memberId: choristerId,
+      value: "available",
+    });
+    await ctx.db.insert("availabilities", {
+      candidateDateId: dates[1]._id,
+      memberId: choristerId,
+      value: "if_needed",
+    });
+  });
+
+  await asDirector.mutation(api.polls.removeCandidateDate, { candidateDateId: dates[0]._id });
+
+  const remaining = await t.run(async (ctx) => ctx.db.query("availabilities").collect());
+  expect(remaining.map((a) => a.candidateDateId)).toEqual([dates[1]._id]);
+});
+
+test("update patches only the given fields and stamps the editor", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId } = await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Spring Concert",
+    location: "St Mary's",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+
+  await asDirector.mutation(api.polls.update, { pollId, title: "Spring Concert 2026" });
+
+  const poll = await t.run(async (ctx) => ctx.db.get("polls", pollId));
+  expect(poll).toMatchObject({
+    title: "Spring Concert 2026",
+    location: "St Mary's",
+    updatedByMemberId: directorId,
+  });
+});
+
+test("update clears the deadline when given null, and the location when given an empty string", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Spring Concert",
+    location: "St Mary's",
+    deadlineAt: MARCH_1 - 7 * DAY,
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+
+  await asDirector.mutation(api.polls.update, { pollId, deadlineAt: null, location: "" });
+
+  const poll = await t.run(async (ctx) => ctx.db.get("polls", pollId));
+  expect(poll?.deadlineAt).toBeUndefined();
+  expect(poll?.location).toBeUndefined();
+});
+
+test("update refuses a Chorister", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const pollId = await t.withIdentity(directorIdentity).mutation(api.polls.create, {
+    title: "Spring Concert",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+
+  await expect(
+    t.withIdentity(choristerIdentity).mutation(api.polls.update, { pollId, title: "Hijacked" }),
+  ).rejects.toThrow(/Requires capability: managePolls/);
+});
+
+test("every mutation on a closed Poll throws", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Settled",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+  const dates = (await asDirector.query(api.polls.get, { pollId }))!.candidateDates;
+  await closePoll(t, pollId);
+
+  const readOnly = /closed Poll is read-only/;
+  await expect(asDirector.mutation(api.polls.update, { pollId, title: "Reopened" })).rejects.toThrow(readOnly);
+  await expect(
+    asDirector.mutation(api.polls.addCandidateDate, { pollId, startsAt: MARCH_1 + DAY }),
+  ).rejects.toThrow(readOnly);
+  await expect(
+    asDirector.mutation(api.polls.reorderCandidateDates, { pollId, candidateDateIds: [dates[0]._id] }),
+  ).rejects.toThrow(readOnly);
+  await expect(
+    asDirector.mutation(api.polls.removeCandidateDate, { candidateDateId: dates[0]._id }),
+  ).rejects.toThrow(readOnly);
+});
