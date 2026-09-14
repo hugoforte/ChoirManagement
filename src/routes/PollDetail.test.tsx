@@ -79,7 +79,7 @@ function renderPoll({
     const name = getFunctionName(query);
     if (name === getFunctionName(api.members.viewer)) return viewer;
     if (name === getFunctionName(api.choirSettings.get)) return { name: "Riverside Choir", logoUrl: null };
-    if (name === getFunctionName(api.polls.grid)) return grid;
+    if (name === getFunctionName(api.polls.getGrid)) return grid;
     throw new Error(`Unexpected useQuery call: ${name}`);
   }) as typeof useQuery);
 

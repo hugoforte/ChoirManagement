@@ -21,7 +21,7 @@ export default function PollDetail() {
 
 function PollDetailContent() {
   const { pollId } = useParams<{ pollId: string }>();
-  const grid = useQuery(api.polls.grid, { pollId: pollId as Id<"polls"> });
+  const grid = useQuery(api.polls.getGrid, { pollId: pollId as Id<"polls"> });
   const { run: setAvailability, pending, error } = useTrackedMutation(api.polls.setAvailability);
 
   usePageTitle(grid?.poll.title);

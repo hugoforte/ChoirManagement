@@ -47,6 +47,17 @@ async function touchPoll(ctx: MutationCtx, pollId: Id<"polls">, memberId: Id<"me
   await ctx.db.patch("polls", pollId, { updatedAt: Date.now(), updatedByMemberId: memberId });
 }
 
+// The open half of both list surfaces: `list` (manager-gated, with the
+// closed history after it) and `listOpen` (every Member). One definition so
+// the two can't drift on ordering or bound.
+async function openPollsNewestFirst(ctx: QueryCtx | MutationCtx) {
+  return await ctx.db
+    .query("polls")
+    .withIndex("by_status", (q) => q.eq("status", "open"))
+    .order("desc")
+    .take(200);
+}
+
 async function candidateDatesInOrder(ctx: QueryCtx | MutationCtx, pollId: Id<"polls">) {
   // Bounded by one Poll's own authoring — a handful of dates, the same
   // shape as events.roster collecting one Event's RSVPs.
@@ -248,11 +259,7 @@ export const list = query({
   returns: v.array(schema.doc("polls")),
   handler: async (ctx) => {
     await requireCan(ctx, "managePolls");
-    const open = await ctx.db
-      .query("polls")
-      .withIndex("by_status", (q) => q.eq("status", "open"))
-      .order("desc")
-      .take(200);
+    const open = await openPollsNewestFirst(ctx);
     const closed = await ctx.db
       .query("polls")
       .withIndex("by_status", (q) => q.eq("status", "closed"))
@@ -264,6 +271,10 @@ export const list = query({
 
 const availabilityValue = schema.tables.availabilities.validator.fields.value;
 
+// `if_needed` keeps the schema's own spelling rather than being camelCased
+// at this boundary, so a tally is incremented by `tally[value]` straight
+// from an Availability's value with no mapping table in between.
+//
 // Every value gets its own count, plus the Members who haven't answered —
 // the most useful number on the grid (#9), and the reason guest responses
 // are excluded. `if_needed` is never folded into `unavailable`.
@@ -319,7 +330,7 @@ export const setAvailability = mutation({
 // `values` and `tallies` are positional: index i of both lines up with
 // index i of `candidateDates`, so the client renders columns without
 // looking anything up by id.
-export const grid = query({
+export const getGrid = query({
   args: { pollId: v.id("polls") },
   returns: v.union(
     v.null(),
@@ -395,10 +406,6 @@ export const listOpen = query({
   returns: v.array(schema.doc("polls")),
   handler: async (ctx) => {
     await requireMember(ctx);
-    return await ctx.db
-      .query("polls")
-      .withIndex("by_status", (q) => q.eq("status", "open"))
-      .order("desc")
-      .take(200);
+    return await openPollsNewestFirst(ctx);
   },
 });

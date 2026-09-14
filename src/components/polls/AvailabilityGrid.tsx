@@ -14,7 +14,7 @@ import { Id } from "../../../convex/_generated/dataModel";
 import { AVAILABILITY_BADGE, AVAILABILITY_LABEL, AVAILABILITY_VALUES, type AvailabilityValue } from "../../lib/availability";
 import { formatCandidateDate } from "../../lib/datetime";
 
-export type PollGrid = NonNullable<FunctionReturnType<typeof api.polls.grid>>;
+export type PollGrid = NonNullable<FunctionReturnType<typeof api.polls.getGrid>>;
 
 const cellClass = "border-b border-stone-200 px-3 py-2 text-sm dark:border-stone-800";
 const headerClass = `${cellClass} text-left font-medium`;
@@ -28,6 +28,10 @@ export function AvailabilityGrid({
   // Omitted means read-only: a closed Poll here, and every Poll in the
   // history view (#88).
   onSet?: (candidateDateId: Id<"candidateDates">, value: AvailabilityValue) => void;
+  // Disables the viewer's whole row, not just the cell in flight:
+  // useTrackedMutation runs one call at a time and drops any that overlaps,
+  // so a second cell left enabled would swallow the click instead of
+  // queueing it.
   pending?: boolean;
 }) {
   if (grid.candidateDates.length === 0) {
@@ -55,7 +59,7 @@ export function AvailabilityGrid({
             <tr key={row.memberId} className={row.isViewer ? "bg-stone-50 dark:bg-stone-900" : undefined}>
               <th scope="row" className={headerClass}>
                 {row.name}
-                {row.isViewer && <span className="ml-1 text-xs text-stone-500 dark:text-stone-400">(you)</span>}
+                {row.isViewer && <span className="ml-1 text-xs text-stone-500 dark:text-stone-400"> (you)</span>}
               </th>
               {grid.candidateDates.map((candidateDate, column) => {
                 const value = row.values[column];
@@ -63,7 +67,7 @@ export function AvailabilityGrid({
                 return (
                   <td key={candidateDate._id} className={cellClass}>
                     {row.isViewer && onSet ? (
-                      <span className="flex gap-1">
+                      <div className="flex gap-1">
                         {AVAILABILITY_VALUES.map((option) => (
                           <button
                             key={option}
@@ -81,7 +85,7 @@ export function AvailabilityGrid({
                             {AVAILABILITY_LABEL[option]}
                           </button>
                         ))}
-                      </span>
+                      </div>
                     ) : (
                       <span
                         className={`inline-block rounded-full px-2 py-0.5 text-xs ${
@@ -102,12 +106,12 @@ export function AvailabilityGrid({
             <th scope="row" className={headerClass}>
               Tally
             </th>
-            {grid.tallies.map((tally, column) => (
-              <td key={grid.candidateDates[column]._id} className={`${cellClass} text-stone-600 dark:text-stone-400`}>
-                <span className="block text-xs">{tally.available} available</span>
-                <span className="block text-xs">{tally.if_needed} if needed</span>
-                <span className="block text-xs">{tally.unavailable} unavailable</span>
-                <span className="block text-xs">{tally.notAnswered} not answered yet</span>
+            {grid.candidateDates.map((candidateDate, column) => (
+              <td key={candidateDate._id} className={`${cellClass} text-stone-600 dark:text-stone-400`}>
+                <span className="block text-xs">{grid.tallies[column].available} available</span>
+                <span className="block text-xs">{grid.tallies[column].if_needed} if needed</span>
+                <span className="block text-xs">{grid.tallies[column].unavailable} unavailable</span>
+                <span className="block text-xs">{grid.tallies[column].notAnswered} not answered yet</span>
               </td>
             ))}
           </tr>

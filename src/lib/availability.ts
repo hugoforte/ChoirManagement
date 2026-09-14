@@ -4,7 +4,12 @@
 // unchosen date and an RSVP is a commitment to a scheduled Event
 // (CONTEXT.md, ADR-0005). They must never share a vocabulary that invites
 // one to be rendered as the other.
-export type AvailabilityValue = "available" | "unavailable" | "if_needed";
+import type { Doc } from "../../convex/_generated/dataModel";
+
+// Derived from the schema, not restated: a fourth value added to
+// availabilities.value becomes a type error here instead of a silently
+// missing control.
+export type AvailabilityValue = Doc<"availabilities">["value"];
 
 // "If needed" sits between the two, not after them: it is a first-class
 // answer, not a shade of "no" (#9), and reading it last would invite

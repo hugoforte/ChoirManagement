@@ -405,7 +405,7 @@ test("grid names every Member, including the ones who have not answered", async 
     .withIdentity(choristerIdentity)
     .mutation(api.polls.setAvailability, { candidateDateId: dates[0]._id, value: "available" });
 
-  const grid = await t.withIdentity(choristerIdentity).query(api.polls.grid, { pollId });
+  const grid = await t.withIdentity(choristerIdentity).query(api.polls.getGrid, { pollId });
   expect(grid?.rows).toEqual([
     { memberId: choristerId, name: "Chris Chorister", isViewer: true, values: ["available", null] },
     { memberId: directorId, name: "Dana Director", isViewer: false, values: [null, null] },
@@ -430,7 +430,7 @@ test("grid tallies each value separately and counts who is still missing", async
     .withIdentity(choristerIdentity)
     .mutation(api.polls.setAvailability, { candidateDateId: dates[1]._id, value: "unavailable" });
 
-  const grid = await asDirector.query(api.polls.grid, { pollId });
+  const grid = await asDirector.query(api.polls.getGrid, { pollId });
   expect(grid?.tallies).toEqual([
     { available: 1, unavailable: 0, if_needed: 1, notAnswered: 0 },
     { available: 0, unavailable: 1, if_needed: 0, notAnswered: 1 },
@@ -446,7 +446,7 @@ test("grid keeps its columns in the Poll's displayOrder", async () => {
     candidateDates: [{ startsAt: MARCH_1 + 2 * DAY }, { startsAt: MARCH_1 }, { startsAt: MARCH_1 + DAY }],
   });
 
-  const grid = await asDirector.query(api.polls.grid, { pollId });
+  const grid = await asDirector.query(api.polls.getGrid, { pollId });
   expect(grid?.candidateDates.map((c) => c.startsAt)).toEqual([MARCH_1 + 2 * DAY, MARCH_1, MARCH_1 + DAY]);
 });
 
@@ -466,4 +466,23 @@ test("listOpen gives every Member the open Polls and leaves closed ones out", as
 
   const polls = await t.withIdentity(choristerIdentity).query(api.polls.listOpen, {});
   expect(polls.map((p) => p._id)).toEqual([open]);
+});
+
+test("a Poll's grid is closed to a caller with no identity", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pollId = await asDirector.mutation(api.polls.create, {
+    title: "Named personal data",
+    candidateDates: [{ startsAt: MARCH_1 }],
+  });
+  const dates = (await asDirector.query(api.polls.get, { pollId }))!.candidateDates;
+
+  // A Poll's grid names identifiable Members, so it is never reachable
+  // without signing in (#9) — there is no token-shared or public twin.
+  await expect(t.query(api.polls.getGrid, { pollId })).rejects.toThrow(/Not signed in/);
+  await expect(t.query(api.polls.listOpen, {})).rejects.toThrow(/Not signed in/);
+  await expect(
+    t.mutation(api.polls.setAvailability, { candidateDateId: dates[0]._id, value: "available" }),
+  ).rejects.toThrow(/Not signed in/);
 });
