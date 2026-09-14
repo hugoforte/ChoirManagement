@@ -36,3 +36,34 @@ test("director can create a Poll with several Candidate Dates", async ({ page, c
   await expect(candidateDates.first()).toContainText("2026-03-07");
   await expect(candidateDates.last()).toContainText("2026-03-14 19:30–21:00");
 });
+
+// The responding half of the same flow (#85). Kept in this spec rather than
+// a new one because it needs a Poll that only the authoring flow creates,
+// and there is deliberately no chromium-chorister project — the "any Member
+// may respond, managePolls is not required" rule is covered in
+// convex/polls.test.ts instead.
+test("director records an answer on a Poll's availability grid", async ({ page, context }) => {
+  await setupClerkTestingToken({ context });
+
+  const title = `E2E Grid Poll ${Date.now()}`;
+
+  await page.goto("/polls/manage");
+  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Candidate Date 1", { exact: true }).fill("2026-04-11");
+  await page.getByRole("button", { name: "Create Poll" }).click();
+  await expect(page.getByRole("link", { name: title })).toBeVisible();
+
+  // Members reach the grid from /polls, not from the management list.
+  await page.goto("/polls");
+  await page.getByRole("link", { name: title }).click();
+  await page.waitForURL(/\/polls\/(?!manage).+/);
+
+  const ifNeeded = page.getByRole("button", { name: "If needed on 2026-04-11" });
+  await expect(ifNeeded).toHaveAttribute("aria-pressed", "false");
+  await ifNeeded.click();
+  await expect(ifNeeded).toHaveAttribute("aria-pressed", "true");
+
+  // The answer lands in the tally as `if_needed`, never folded into
+  // unavailable.
+  await expect(page.getByText("1 if needed")).toBeVisible();
+});
