@@ -22,11 +22,18 @@ type Role = Doc<"members">["role"];
 // manageEvents even though all three resolve to the same Roles today: a
 // future chorister-secretary should be able to write Bulletins or run a
 // Poll without gaining the ability to edit Events.
+//
+// deletePublishedBulletins is narrower still, and sits inside a page the
+// broader manageBulletins already gates — the same shape as assignRoles
+// inside /members/manage. manageBulletins covers drafting, publishing,
+// editing and Share Links; permanently deleting a *published* Bulletin is
+// admin-only (#49).
 export type Capability =
   | "manageEvents"
   | "manageLibrary"
   | "manageRoster"
   | "manageBulletins"
+  | "deletePublishedBulletins"
   | "managePolls"
   | "assignRoles"
   | "manageSettings";
@@ -36,6 +43,7 @@ const CAPABILITY_ROLES: Record<Capability, readonly Role[]> = {
   manageLibrary: ["admin", "director"],
   manageRoster: ["admin", "director"],
   manageBulletins: ["admin", "director"],
+  deletePublishedBulletins: ["admin"],
   managePolls: ["admin", "director"],
   assignRoles: ["admin"],
   manageSettings: ["admin"],

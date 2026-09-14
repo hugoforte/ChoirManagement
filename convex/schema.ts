@@ -197,22 +197,34 @@ export default defineSchema({
     // Doubles as the "edited" timestamp #49 asks for: a published Bulletin
     // shows this alongside publishedAt when it is the later of the two.
     // One field rather than a separate lastEditedAt saying the same thing.
+    // Bumped by content edits (title, body, eventId, Remarks) and by
+    // publishing — never by issuing or regenerating a Share Link, which
+    // would falsely show the Bulletin as edited.
     updatedAt: v.number(),
     createdByMemberId: v.id("members"),
     updatedByMemberId: v.optional(v.id("members")),
     // At most one Share Link per Bulletin (ADR-0004). The token is a bearer
     // credential granting read of this one Bulletin; regenerating it revokes
-    // the previous URL. Absent until a Share Link is issued.
-    shareToken: v.optional(v.string()),
-    shareMode: v.optional(
-      v.union(v.literal("sign_in_required"), v.literal("token")),
+    // the previous URL. One optional object rather than two loose optional
+    // fields, so a token can never exist without its mode. Absent until a
+    // Share Link is issued.
+    shareLink: v.optional(
+      v.object({
+        token: v.string(),
+        mode: v.union(v.literal("sign_in_required"), v.literal("token")),
+      }),
     ),
   })
     // The archive read: published Bulletins, newest first.
     .index("by_status_and_published_at", ["status", "publishedAt"])
+    // Event detail listing the Bulletins anchored to it; also the anchor
+    // picker's per-Event count.
     .index("by_event_id", ["eventId"])
-    // Resolves a token Share Link to its one Bulletin (ADR-0004).
-    .index("by_share_token", ["shareToken"]),
+    // Resolves a token Share Link to its one Bulletin (ADR-0004). The field
+    // is optional, so every unshared Bulletin indexes under undefined —
+    // #83's query must take `token: v.string()` and never pass an undefined
+    // token, or it would match an arbitrary unshared Bulletin.
+    .index("by_share_link_token", ["shareLink.token"]),
 
   // A comment about one Piece carried inside a Bulletin (#49). Owned by its
   // Bulletin: publishing, editing and deleting cascade from there. Names its
@@ -252,7 +264,10 @@ export default defineSchema({
   })
     // Open Polls, then closed ones as history; newest first within each, on
     // the _creationTime Convex appends to every index.
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    // #87's Event detail finds the originating Poll from the Event it
+    // produced, to show that Poll's availability alongside the RSVPs.
+    .index("by_resulting_event_id", ["resultingEventId"]),
 
   // One proposed option within a Poll (#9). Represented identically to
   // events.startsAt so that promotion is a straight copy. Assumes one Choir
@@ -282,7 +297,8 @@ export default defineSchema({
     .index("by_member_id", ["memberId"])
     // One Availability per Member per Candidate Date — look this up before
     // insert to decide insert-vs-patch; Convex doesn't enforce uniqueness
-    // itself, same as rsvps above.
+    // itself. Same rule as rsvps above, which keeps one RSVP per Member per
+    // Event the same way.
     .index("by_candidate_date_id_and_member_id", [
       "candidateDateId",
       "memberId",
