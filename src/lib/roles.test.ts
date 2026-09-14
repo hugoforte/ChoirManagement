@@ -19,6 +19,9 @@ describe("can", () => {
     expect(can(admin, "manageEvents")).toBe(true);
     expect(can(admin, "manageLibrary")).toBe(true);
     expect(can(admin, "manageRoster")).toBe(true);
+    expect(can(admin, "manageBulletins")).toBe(true);
+    expect(can(admin, "deletePublishedBulletins")).toBe(true);
+    expect(can(admin, "managePolls")).toBe(true);
     expect(can(admin, "assignRoles")).toBe(true);
     expect(can(admin, "manageSettings")).toBe(true);
   });
@@ -27,6 +30,9 @@ describe("can", () => {
     const director = member("director");
     expect(can(director, "manageEvents")).toBe(true);
     expect(can(director, "manageRoster")).toBe(true);
+    expect(can(director, "manageBulletins")).toBe(true);
+    expect(can(director, "deletePublishedBulletins")).toBe(false);
+    expect(can(director, "managePolls")).toBe(true);
     expect(can(director, "assignRoles")).toBe(false);
     expect(can(director, "manageSettings")).toBe(false);
   });
@@ -36,6 +42,9 @@ describe("can", () => {
     expect(can(chorister, "manageEvents")).toBe(false);
     expect(can(chorister, "manageLibrary")).toBe(false);
     expect(can(chorister, "manageRoster")).toBe(false);
+    expect(can(chorister, "manageBulletins")).toBe(false);
+    expect(can(chorister, "deletePublishedBulletins")).toBe(false);
+    expect(can(chorister, "managePolls")).toBe(false);
     expect(can(chorister, "assignRoles")).toBe(false);
     expect(can(chorister, "manageSettings")).toBe(false);
   });

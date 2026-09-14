@@ -11,6 +11,10 @@ import Events from "./routes/Events";
 import EventDetail from "./routes/EventDetail";
 import EventsManage from "./routes/EventsManage";
 import EventManageDetail from "./routes/EventManageDetail";
+import Bulletins from "./routes/Bulletins";
+import BulletinsManage from "./routes/BulletinsManage";
+import Polls from "./routes/Polls";
+import PollsManage from "./routes/PollsManage";
 import Members from "./routes/Members";
 import MembersManage from "./routes/MembersManage";
 import Settings from "./routes/Settings";
@@ -30,6 +34,10 @@ export default function App() {
       <Route path="/events/manage" element={<EventsManage />} />
       <Route path="/events/manage/:eventId" element={<EventManageDetail />} />
       <Route path="/events/:eventId" element={<EventDetail />} />
+      <Route path="/bulletins" element={<Bulletins />} />
+      <Route path="/bulletins/manage" element={<BulletinsManage />} />
+      <Route path="/polls" element={<Polls />} />
+      <Route path="/polls/manage" element={<PollsManage />} />
       <Route path="/members" element={<Members />} />
       <Route path="/members/manage" element={<MembersManage />} />
       <Route path="/settings" element={<Settings />} />
