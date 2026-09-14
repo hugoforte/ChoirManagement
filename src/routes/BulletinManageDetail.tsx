@@ -11,6 +11,7 @@ import { Id } from "../../convex/_generated/dataModel";
 import { useTrackedMutation } from "../lib/useTrackedMutation";
 import { editedAt } from "../lib/bulletin";
 import { formatTimestamp } from "../lib/datetime";
+import { ShareLinkPanel } from "../components/bulletins/ShareLinkPanel";
 import { Markdown } from "../design/Markdown";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { inputClass, labelClass, primaryButtonClass } from "../design/forms";
@@ -164,6 +165,8 @@ function BulletinManageDetailContent() {
             <h2 className={labelClass}>Preview</h2>
             <Markdown source={fields.body} className="mt-2 text-sm text-stone-700 dark:text-stone-300" />
           </section>
+
+          <ShareLinkPanel bulletinId={id} published={bulletin.status === "published"} />
         </div>
       )}
     </>

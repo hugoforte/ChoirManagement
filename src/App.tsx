@@ -4,6 +4,7 @@ import Home from "./routes/Home";
 import SignIn from "./routes/SignIn";
 import PublicEvents from "./routes/PublicEvents";
 import PublicEventDetail from "./routes/PublicEventDetail";
+import SharedBulletin from "./routes/SharedBulletin";
 import Library from "./routes/Library";
 import PieceDetail from "./routes/PieceDetail";
 import LibraryManage from "./routes/LibraryManage";
@@ -30,6 +31,8 @@ export default function App() {
       <Route path="/sign-in" element={<SignIn />} />
       <Route path="/public/events" element={<PublicEvents />} />
       <Route path="/public/events/:eventId" element={<PublicEventDetail />} />
+      {/* Share Link landing (#83, ADR-0004): readable with no account in token mode. */}
+      <Route path="/s/:token" element={<SharedBulletin />} />
       <Route path="/library" element={<Library />} />
       <Route path="/library/manage" element={<LibraryManage />} />
       <Route path="/library/:pieceId" element={<PieceDetail />} />
