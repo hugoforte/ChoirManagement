@@ -81,4 +81,43 @@ describe("SynchronizedAudioPlayer", () => {
     expect(sources[1].currentTime).toBe(12);
     expect(screen.getByRole("button", { name: "Pause selected tracks" })).toBeInTheDocument();
   });
+
+  it("does not interrupt pending selected-track play requests when playback state renders", async () => {
+    vi.restoreAllMocks();
+    const pendingPlays = new Map<
+      HTMLMediaElement,
+      { resolve: () => void; reject: (reason: unknown) => void }
+    >();
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(function (
+      this: HTMLMediaElement,
+    ) {
+      return new Promise<void>((resolve, reject) => {
+        pendingPlays.set(this, { resolve, reject });
+      });
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(function (
+      this: HTMLMediaElement,
+    ) {
+      const pending = pendingPlays.get(this);
+      if (!pending) return;
+      pendingPlays.delete(this);
+      pending.reject(new DOMException("The play() request was interrupted by pause().", "AbortError"));
+    });
+
+    render(<SynchronizedAudioPlayer attachments={attachments} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Alto rehearsal.mp3" }));
+    fireEvent.click(screen.getByRole("button", { name: "Play selected tracks" }));
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(
+      screen.queryByText("The selected tracks could not all be played. Try selecting them again."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pause selected tracks" })).toBeInTheDocument();
+    expect(pendingPlays.size).toBe(2);
+
+    for (const pending of pendingPlays.values()) pending.resolve();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Pause selected tracks" })).toBeInTheDocument(),
+    );
+  });
 });

@@ -48,6 +48,9 @@ export function SynchronizedAudioPlayer({
   );
   const selectedIdsRef = useRef(selectedIds);
   const audioElements = useRef(new Map<string, HTMLAudioElement>());
+  const audioRefCallbacks = useRef(
+    new Map<string, (element: HTMLAudioElement | null) => void>(),
+  );
   const [measuredDurations, setMeasuredDurations] = useState<ReadonlyMap<string, number>>(
     () => new Map(),
   );
@@ -83,6 +86,22 @@ export function SynchronizedAudioPlayer({
 
   function pause(ids: Iterable<string>) {
     for (const id of ids) audioElements.current.get(id)?.pause();
+  }
+
+  function audioRefFor(attachmentId: string) {
+    const existing = audioRefCallbacks.current.get(attachmentId);
+    if (existing) return existing;
+
+    const callback = (element: HTMLAudioElement | null) => {
+      if (element) {
+        audioElements.current.set(attachmentId, element);
+      } else {
+        audioElements.current.get(attachmentId)?.pause();
+        audioElements.current.delete(attachmentId);
+      }
+    };
+    audioRefCallbacks.current.set(attachmentId, callback);
+    return callback;
   }
 
   function seek(ids: Iterable<string>, nextTime: number) {
@@ -304,13 +323,7 @@ export function SynchronizedAudioPlayer({
                   </div>
                   {isAvailable && (
                     <audio
-                      ref={(element) => {
-                        if (element) audioElements.current.set(attachment.id, element);
-                        else {
-                          audioElements.current.get(attachment.id)?.pause();
-                          audioElements.current.delete(attachment.id);
-                        }
-                      }}
+                      ref={audioRefFor(attachment.id)}
                       src={attachment.preview.url ?? undefined}
                       preload="metadata"
                       hidden
