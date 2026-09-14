@@ -2,7 +2,10 @@
 // array-swap logic was a closure over component state with nothing to test
 // it through except a browser. Returns the same array reference when the
 // move is out of bounds, not a copy, so a caller can skip a re-render.
-export function moveSetlistItem<T>(items: T[], index: number, direction: -1 | 1): T[] {
+//
+// Always been generic; named for the Setlist until a Poll's Candidate Dates
+// (#84) became the second list with the same up/down buttons.
+export function moveItem<T>(items: T[], index: number, direction: -1 | 1): T[] {
   const swapWith = index + direction;
   if (swapWith < 0 || swapWith >= items.length) return items;
   const next = [...items];

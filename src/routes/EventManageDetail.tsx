@@ -6,7 +6,7 @@ import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { useTrackedMutation } from "../lib/useTrackedMutation";
 import { toDatetimeLocal } from "../lib/datetime";
-import { moveSetlistItem } from "../lib/setlist";
+import { moveItem } from "../lib/reorder";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { inputClass, labelClass, primaryButtonClass, dangerLinkClass } from "../design/forms";
 import NotFound from "./NotFound";
@@ -77,7 +77,7 @@ function EventManageDetailContent() {
   }
 
   function moveSetlist(index: number, direction: -1 | 1) {
-    setSetlist((items) => moveSetlistItem(items, index, direction));
+    setSetlist((items) => moveItem(items, index, direction));
   }
 
   return (
