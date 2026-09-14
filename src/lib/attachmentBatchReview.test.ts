@@ -6,6 +6,8 @@ import {
   bulkSetReviewRowVoiceParts,
   canPublishAttachmentBatchReview,
   createAttachmentBatchReview,
+  describeFinishBlocker,
+  removeReviewRow,
   resetReviewRowFilename,
   setAttachmentBatchReviewCredits,
   setReviewRowExactDuplicateDecision,
@@ -269,5 +271,103 @@ describe("duplicate and collision decisions", () => {
     );
     state = setReviewRowNameCollisionDecision(state, "tenor", "skip");
     expect(row(state, "tenor").included).toBe(false);
+  });
+});
+
+describe("cancelling a row", () => {
+  it("drops a row entirely so it cannot be re-included", () => {
+    let state = createAttachmentBatchReview(input());
+    state = removeReviewRow(state, "tenor");
+    expect(state.rows.map((candidate) => candidate.id)).toEqual(["pdf", "source"]);
+  });
+});
+
+describe("primary score suggestion", () => {
+  it("skips a row decided as a new-version replacement when suggesting a primary", () => {
+    let state = createAttachmentBatchReview(
+      input({
+        files: [{ id: "pdf", name: "Hallelujah score.pdf", size: 100 }],
+        existingAttachments: [
+          { id: "old", filename: "Hallelujah - Handel - Full Score.pdf" },
+        ],
+      }),
+    );
+    state = setReviewRowNameCollisionDecision(state, "pdf", "newVersion", "old");
+    expect(row(state, "pdf").isPrimary).toBe(false);
+
+    state = addFilesToAttachmentBatchReview(state, [
+      { id: "second", name: "Hallelujah score alt.pdf", size: 50 },
+    ]);
+    expect(row(state, "pdf").isPrimary).toBe(false);
+    expect(row(state, "second").isPrimary).toBe(true);
+  });
+
+  it("stops re-suggesting a primary once the Director explicitly unchecks one", () => {
+    let state = createAttachmentBatchReview(input());
+    expect(row(state, "pdf").isPrimary).toBe(true);
+
+    state = setReviewRowPrimary(state, "pdf", false);
+    expect(row(state, "pdf").isPrimary).toBe(false);
+    expect(state.primarySuggestionCleared).toBe(true);
+
+    state = addFilesToAttachmentBatchReview(state, [
+      { id: "second-pdf", name: "Another score.pdf", size: 10 },
+    ]);
+    expect(state.rows.some((candidate) => candidate.isPrimary)).toBe(false);
+  });
+
+  it("does not treat an ineligible manual attempt as clearing the suggestion", () => {
+    let state = createAttachmentBatchReview(input());
+    state = setReviewRowPrimary(state, "source", true);
+    expect(state.primarySuggestionCleared).toBe(false);
+    expect(row(state, "pdf").isPrimary).toBe(true);
+  });
+});
+
+describe("finish-disabled reason", () => {
+  it("explains files still uploading", () => {
+    const state = createAttachmentBatchReview(input());
+    expect(
+      describeFinishBlocker({ review: state, queuedOrUploadingCount: 2, failedCount: 0 }),
+    ).toBe("2 files still uploading");
+  });
+
+  it("explains a single failed upload needing retry or cancel", () => {
+    const state = createAttachmentBatchReview(input());
+    expect(
+      describeFinishBlocker({ review: state, queuedOrUploadingCount: 0, failedCount: 1 }),
+    ).toBe("1 upload failed — retry or cancel them");
+  });
+
+  it("explains that no files are included", () => {
+    let state = createAttachmentBatchReview(input());
+    for (const id of ["pdf", "tenor", "source"]) {
+      state = setReviewRowIncluded(state, id, false);
+    }
+    expect(
+      describeFinishBlocker({ review: state, queuedOrUploadingCount: 0, failedCount: 0 }),
+    ).toBe("No files included");
+  });
+
+  it("points at the highlighted rows for other validation issues", () => {
+    const state = createAttachmentBatchReview(
+      input({ files: [{ id: "bad", name: "installer.exe", size: 1 }] }),
+    );
+    expect(
+      describeFinishBlocker({ review: state, queuedOrUploadingCount: 0, failedCount: 0 }),
+    ).toBe("Fix the highlighted rows");
+  });
+
+  it("returns null once nothing blocks finishing", () => {
+    const state = createAttachmentBatchReview(input());
+    expect(
+      describeFinishBlocker({ review: state, queuedOrUploadingCount: 0, failedCount: 0 }),
+    ).toBeNull();
+  });
+
+  it("returns null without a review yet", () => {
+    expect(
+      describeFinishBlocker({ review: null, queuedOrUploadingCount: 3, failedCount: 0 }),
+    ).toBeNull();
   });
 });
