@@ -11,6 +11,7 @@ import {
   requireCurrentRevisionBelongsToAttachment,
   requirePrimaryScoreEligible,
   requirePurposeAllowedForFormat,
+  requireSafeUpload,
   requireValidVoicePartSelection,
 } from "./lib/pieceAttachmentPolicy";
 import schema from "./schema";
@@ -313,6 +314,11 @@ export const publishBatch = mutation({
             replacedAttachment._id,
             replacedVersion,
           );
+          if (attachment.format !== replacedAttachment.format) {
+            throw new Error(
+              "New version must keep the same file format as the replaced attachment",
+            );
+          }
         } else {
           requirePurposeAllowedForFormat(attachment.format, attachment.purpose);
           if (attachment.isPrimary) {
@@ -325,6 +331,8 @@ export const publishBatch = mutation({
           );
         }
         await requireStorageHasNoVersion(ctx, attachment.storageId);
+        const metadata = await getStorageMetadata(ctx, attachment.storageId);
+        requireSafeUpload(attachment.originalFilename, metadata.size);
         const pendingUpload = await ctx.db
           .query("pendingPieceUploads")
           .withIndex("by_storage_id", (q) =>
@@ -340,7 +348,7 @@ export const publishBatch = mutation({
         }
         return {
           attachment,
-          metadata: await getStorageMetadata(ctx, attachment.storageId),
+          metadata,
           pendingUploadId: pendingUpload?._id,
           replacedAttachment,
           replacedVersion,

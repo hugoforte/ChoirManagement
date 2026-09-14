@@ -597,6 +597,73 @@ test("a filename collision can publish atomically as a new revision", async () =
   ).toHaveLength(0);
 });
 
+test("publication rejects empty files and unsafe executable extensions", async () => {
+  const { t, pieceId } = await setup();
+  const emptyId = await store(t, "");
+  const exeId = await store(t, "not actually empty");
+  const director = t.withIdentity(directorIdentity);
+
+  await expect(
+    director.mutation(api.pieceAttachments.publishBatch, {
+      pieceId,
+      attachments: [{ ...fullScore(emptyId), originalFilename: "empty.pdf" }],
+    }),
+  ).rejects.toThrow(/empty/);
+
+  await expect(
+    director.mutation(api.pieceAttachments.publishBatch, {
+      pieceId,
+      attachments: [
+        { ...fullScore(exeId), originalFilename: "installer.exe" },
+      ],
+    }),
+  ).rejects.toThrow(/Executable files are not allowed/);
+
+  const attachments = await t.run(
+    async (ctx) => await ctx.db.query("pieceAttachments").collect(),
+  );
+  const versions = await t.run(
+    async (ctx) => await ctx.db.query("pieceFileVersions").collect(),
+  );
+  expect(attachments).toHaveLength(0);
+  expect(versions).toHaveLength(0);
+});
+
+test("upload as new version must keep the replaced attachment's format", async () => {
+  const { t, pieceId } = await setup();
+  const firstStorageId = await store(t, "first revision");
+  const wrongFormatStorageId = await store(t, "wrong format replacement");
+  const director = t.withIdentity(directorIdentity);
+  const [attachmentId] = await director.mutation(
+    api.pieceAttachments.publishBatch,
+    { pieceId, attachments: [fullScore(firstStorageId)] },
+  );
+
+  await expect(
+    director.mutation(api.pieceAttachments.publishBatch, {
+      pieceId,
+      attachments: [
+        {
+          ...fullScore(wrongFormatStorageId),
+          format: "musescore",
+          originalFilename: "ave-verum.mscz",
+          replaceAttachmentId: attachmentId,
+        },
+      ],
+    }),
+  ).rejects.toThrow(/same file format/);
+
+  const versions = await t.run(async (ctx) =>
+    await ctx.db
+      .query("pieceFileVersions")
+      .withIndex("by_attachment_id_and_revision_number", (q) =>
+        q.eq("attachmentId", attachmentId),
+      )
+      .take(3),
+  );
+  expect(versions.map((version) => version.revisionNumber)).toEqual([1]);
+});
+
 test("discard refuses referenced storage and deletes an unreferenced upload", async () => {
   const { t, pieceId } = await setup();
   const referencedId = await store(t, "referenced");
