@@ -291,6 +291,40 @@ test("a Director may not delete a published Bulletin, but an Admin may", async (
   expect(await t.run(async (ctx) => await ctx.db.get("bulletins", bulletinId))).toBeNull();
 });
 
+test("deleting a Bulletin deletes its Remarks", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const pieceId = await t.run(async (ctx) =>
+    ctx.db.insert("pieces", {
+      title: "Ode to Joy",
+      composer: undefined,
+      arranger: undefined,
+      notes: undefined,
+      youtubeUrl: undefined,
+      files: [],
+    }),
+  );
+  const bulletinId = await asDirector.mutation(api.bulletins.createDraft, { title: "Scrap this" });
+  await asDirector.mutation(api.bulletinRemarks.add, {
+    bulletinId,
+    pieceId,
+    text: "Watch the tempo.",
+  });
+
+  await asDirector.mutation(api.bulletins.remove, { bulletinId });
+
+  // A Remark is owned by its Bulletin (#49) — none may survive on the
+  // by_piece_id index the Piece reverse lookup reads.
+  const orphans = await t.run(async (ctx) =>
+    ctx.db
+      .query("bulletinRemarks")
+      .withIndex("by_piece_id", (q) => q.eq("pieceId", pieceId))
+      .collect(),
+  );
+  expect(orphans).toEqual([]);
+});
+
 test("remove refuses a Chorister", async () => {
   const t = convexTest(schema, modules);
   await seedMembers(t);
