@@ -2,6 +2,14 @@ import type { Id } from "../../convex/_generated/dataModel";
 
 export const DEFAULT_MAX_CONCURRENT_UPLOADS = 3;
 export const DEFAULT_LARGE_FILE_WARNING_BYTES = 100 * 1024 * 1024;
+/**
+ * The discard/cleanup mutation this manager calls through
+ * `discardUnreferenced` rejects calls with more than 50 storage IDs (see the
+ * backend mutation on the stacked branch that adds it). The manager only
+ * holds a callback slot for that mutation, so batching to this ceiling has
+ * to happen here rather than on the backend side.
+ */
+export const MAX_DISCARD_BATCH_SIZE = 50;
 
 export type StorageId = Id<"_storage">;
 export type UploadStatus = "queued" | "uploading" | "succeeded" | "failed" | "cancelled";
@@ -368,23 +376,45 @@ export class BatchUploadManager {
       );
     if (storageIds.length === 0) return true;
     for (const storageId of storageIds) this.cleaningStorageIds.add(storageId);
-    if (!this.discardUnreferenced) {
+    const discardUnreferenced = this.discardUnreferenced;
+    if (!discardUnreferenced) {
       for (const storageId of storageIds) this.cleaningStorageIds.delete(storageId);
       this.batchError = "Uploaded files need cleanup, but no cleanup handler was configured.";
       return false;
     }
-    try {
-      await this.discardUnreferenced(storageIds);
-      for (const storageId of storageIds) {
-        this.cleaningStorageIds.delete(storageId);
-        this.cleanedStorageIds.add(storageId);
+
+    // The backend discard mutation caps how many storage IDs it accepts per
+    // call, so a large batch has to be split here. Chunks are attempted
+    // independently (Promise.allSettled, not the first rejection short-
+    // circuiting the rest) so one bad chunk doesn't strand the storage IDs
+    // in every other chunk as un-cleaned: successful chunks are recorded as
+    // cleaned immediately, and only the failed chunk's IDs stay eligible for
+    // a retry on the next cleanup pass.
+    const chunks: StorageId[][] = [];
+    for (let start = 0; start < storageIds.length; start += MAX_DISCARD_BATCH_SIZE) {
+      chunks.push(storageIds.slice(start, start + MAX_DISCARD_BATCH_SIZE));
+    }
+    const results = await Promise.allSettled(chunks.map((chunk) => discardUnreferenced(chunk)));
+
+    let firstErrorMessage: string | null = null;
+    results.forEach((result, index) => {
+      const chunk = chunks[index];
+      if (result.status === "fulfilled") {
+        for (const storageId of chunk) {
+          this.cleaningStorageIds.delete(storageId);
+          this.cleanedStorageIds.add(storageId);
+        }
+      } else {
+        for (const storageId of chunk) this.cleaningStorageIds.delete(storageId);
+        firstErrorMessage ??= errorMessage(result.reason);
       }
-      return true;
-    } catch (error) {
-      for (const storageId of storageIds) this.cleaningStorageIds.delete(storageId);
-      this.batchError = `Upload cleanup failed: ${errorMessage(error)}`;
+    });
+
+    if (firstErrorMessage !== null) {
+      this.batchError = `Upload cleanup failed: ${firstErrorMessage}`;
       return false;
     }
+    return true;
   }
 
   private publish(): void {

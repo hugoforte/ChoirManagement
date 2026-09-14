@@ -5,6 +5,7 @@ import {
   BatchUploadManager,
   calculateSha256,
   DEFAULT_LARGE_FILE_WARNING_BYTES,
+  MAX_DISCARD_BATCH_SIZE,
   type StorageId,
   type UploadTransport,
   type UploadTransportOptions,
@@ -166,7 +167,7 @@ describe("BatchUploadManager", () => {
     expect(manager.getSnapshot().files.every((entry) => entry.status === "succeeded")).toBe(true);
   });
 
-  it("cancels queued and active files and asks the backend to discard uploaded IDs", async () => {
+  it("cancels active and succeeded files and asks the backend to discard uploaded IDs", async () => {
     const transport = new ControlledTransport();
     const discarded: StorageId[][] = [];
     const manager = new BatchUploadManager({
@@ -189,6 +190,37 @@ describe("BatchUploadManager", () => {
     expect(transport.calls).toEqual(["kept", "cancelled"]);
   });
 
+  it("cancels a queued file before it ever reaches the transport", async () => {
+    const transport = new ControlledTransport();
+    const discarded: StorageId[][] = [];
+    const manager = new BatchUploadManager({
+      transport,
+      maxConcurrent: 1,
+      discardUnreferenced: async (storageIds) => {
+        discarded.push([...storageIds]);
+      },
+    });
+    // maxConcurrent: 1 keeps "second" queued behind "first" so it's still
+    // "queued" (never started) when cancelled, not "uploading" like the
+    // active-file case above.
+    const ids = manager.addFiles([file("first"), file("second")]);
+    await waitFor(() => expect(transport.calls).toEqual(["first"]));
+    expect(manager.getSnapshot().files.find((entry) => entry.id === ids[1])?.status).toBe("queued");
+
+    const cancelled = await manager.cancel(ids[1]);
+
+    expect(cancelled).toBe(true);
+    expect(manager.getSnapshot().files.find((entry) => entry.id === ids[1])).toMatchObject({
+      status: "cancelled",
+      uploaded: null,
+    });
+    expect(transport.calls).toEqual(["first"]); // the queued file never reached the transport
+    expect(discarded).toEqual([]); // nothing was ever uploaded for it, so nothing needs discarding
+
+    transport.resolve("first");
+    await expectComplete(manager);
+  });
+
   it("reports cleanup failure and retains cancelled entries for recovery", async () => {
     const transport = new ControlledTransport();
     const manager = new BatchUploadManager({
@@ -207,6 +239,51 @@ describe("BatchUploadManager", () => {
       error: "Upload cleanup failed: backend unavailable",
       files: [{ status: "cancelled", uploaded: { storageId: "storage-orphan" } }],
     });
+  });
+
+  it("chunks cancelAll's cleanup call to at most MAX_DISCARD_BATCH_SIZE IDs, and a failing chunk doesn't block the rest", async () => {
+    const transport = new ControlledTransport();
+    const fileCount = 51; // one more than MAX_DISCARD_BATCH_SIZE, so this must span two chunks
+    const names = Array.from({ length: fileCount }, (_, index) => `file-${index}`);
+    const lastStorageId = `storage-${names[fileCount - 1]}` as StorageId;
+
+    let rejectChunkWithLastId = true;
+    const discardCalls: StorageId[][] = [];
+    const manager = new BatchUploadManager({
+      transport,
+      discardUnreferenced: async (storageIds) => {
+        discardCalls.push([...storageIds]);
+        if (rejectChunkWithLastId && storageIds.includes(lastStorageId)) {
+          throw new Error("chunk unavailable");
+        }
+      },
+    });
+
+    manager.addFiles(names.map((name) => file(name)));
+    for (const name of names) {
+      await waitFor(() => expect(transport.pending.has(name)).toBe(true));
+      transport.resolve(name);
+    }
+    await expectComplete(manager);
+
+    // First pass: the chunk holding file-50 fails, the chunk holding
+    // file-0..file-49 succeeds. Both are still attempted (no chunk skipped
+    // because an earlier one failed), and no single call exceeds the cap.
+    await expect(manager.cancelAll()).resolves.toBe(false);
+    expect(discardCalls).toHaveLength(2);
+    for (const call of discardCalls) expect(call.length).toBeLessThanOrEqual(MAX_DISCARD_BATCH_SIZE);
+    expect(discardCalls.flat().sort()).toEqual(
+      names.map((name) => `storage-${name}`).sort(),
+    );
+    expect(manager.getSnapshot().error).toBe("Upload cleanup failed: chunk unavailable");
+
+    // Second pass: only the previously-failed entry should still need
+    // cleanup — the other 50 were already marked cleaned and must not be
+    // resent.
+    discardCalls.length = 0;
+    rejectChunkWithLastId = false;
+    await expect(manager.cancelAll()).resolves.toBe(true);
+    expect(discardCalls).toEqual([[lastStorageId]]);
   });
 
   it("calculates SHA-256, records comparison metadata, and warns at the configured threshold", async () => {
