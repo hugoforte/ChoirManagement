@@ -3,7 +3,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { requireCan } from "./lib/auth";
-import { requirePieceAccess } from "./lib/pieceAccess";
+import { findPieceWithAccess, requirePieceAccess } from "./lib/pieceAccess";
 import { normalizeOptionalText } from "./lib/text";
 import {
   attachmentFormatValidator,
@@ -44,6 +44,7 @@ const reviewedAttachmentValidator = v.object({
 const currentAttachmentValidator = v.object({
   attachment: schema.doc("pieceAttachments"),
   currentVersion: schema.doc("pieceFileVersions"),
+  voiceParts: v.array(schema.doc("voiceParts")),
   url: v.union(v.string(), v.null()),
 });
 
@@ -82,9 +83,19 @@ async function resolveCurrentAttachments(
       if (!currentVersion)
         throw new Error("Active attachment has no current revision");
       requireCurrentRevisionBelongsToAttachment(attachment._id, currentVersion);
+      // `validateVoiceParts` keeps this bounded on write, but degrade instead
+      // of throwing here: a read-path throw would crash the whole Member
+      // page over one attachment, so cap defensively and keep serving it.
+      const voicePartIds = attachment.voicePartIds.slice(0, MAX_VOICE_PARTS_PER_ATTACHMENT);
+      const voiceParts = (
+        await Promise.all(
+          voicePartIds.map((voicePartId) => ctx.db.get("voiceParts", voicePartId)),
+        )
+      ).filter((part): part is Doc<"voiceParts"> => part !== null);
       return {
         attachment,
         currentVersion,
+        voiceParts,
         url: await ctx.storage.getUrl(currentVersion.storageId),
       };
     }),
@@ -166,6 +177,28 @@ export const listActive = query({
       ctx,
       await listActiveAttachments(ctx, pieceId),
     );
+  },
+});
+
+export const getMemberDetail = query({
+  args: { pieceId: v.id("pieces") },
+  returns: v.union(
+    v.null(),
+    v.object({
+      piece: schema.doc("pieces"),
+      attachments: v.array(currentAttachmentValidator),
+    }),
+  ),
+  handler: async (ctx, { pieceId }) => {
+    const piece = await findPieceWithAccess(ctx, pieceId);
+    if (!piece) return null;
+    return {
+      piece,
+      attachments: await resolveCurrentAttachments(
+        ctx,
+        await listActiveAttachments(ctx, pieceId),
+      ),
+    };
   },
 });
 
