@@ -5,7 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
 import { useTrackedMutation } from "../lib/useTrackedMutation";
-import { toDatetimeLocal } from "../lib/datetime";
+import { formatTimestamp } from "../lib/datetime";
 import { MemberPage } from "../design/MemberPage";
 import { inputClass, primaryButtonClass, dangerLinkClass, cardClass } from "../design/forms";
 
@@ -80,7 +80,7 @@ function EventsManageContent() {
                     {event.title}
                   </Link>
                   <div className="text-sm text-stone-500 dark:text-stone-400">
-                    {toDatetimeLocal(event.startsAt).replace("T", " ")}
+                    {formatTimestamp(event.startsAt)}
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-sm">
