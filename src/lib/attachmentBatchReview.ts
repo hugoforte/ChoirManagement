@@ -106,6 +106,8 @@ export interface AttachmentBatchReviewState {
   voiceParts: readonly VoicePart[];
   existingAttachments: readonly ExistingAttachmentForReview[];
   rows: readonly AttachmentReviewRow[];
+  /** True once the Director has explicitly unchecked a suggested primary row. */
+  primarySuggestionCleared: boolean;
 }
 
 function inferred<T>(value: T, confidence: Confidence): InferredValue<T> {
@@ -379,6 +381,8 @@ function recomputeDerivedReviewState(
   rows = rows.map((row) => {
     const canRemainPrimary =
       row.included &&
+      // The backend ignores isPrimary on replacement rows entirely.
+      row.nameCollisionDecision !== "newVersion" &&
       isPrimaryEligible(row.format?.value ?? null, row.purpose?.value ?? null) &&
       primaryAvailable;
     if (row.isPrimary && canRemainPrimary) {
@@ -399,9 +403,19 @@ function recomputeDerivedReviewState(
 }
 
 function suggestFirstPrimary(state: AttachmentBatchReviewState): AttachmentBatchReviewState {
-  if (state.piece.hasPrimaryScore || state.rows.some((row) => row.isPrimary)) return state;
+  if (
+    state.piece.hasPrimaryScore ||
+    state.primarySuggestionCleared ||
+    state.rows.some((row) => row.isPrimary)
+  ) {
+    return state;
+  }
   const candidate = state.rows.find(
-    (row) => row.included && isPrimaryEligible(row.format?.value ?? null, row.purpose?.value ?? null),
+    (row) =>
+      row.included &&
+      // The backend ignores isPrimary on replacement rows entirely.
+      row.nameCollisionDecision !== "newVersion" &&
+      isPrimaryEligible(row.format?.value ?? null, row.purpose?.value ?? null),
   );
   if (!candidate) return state;
   return {
@@ -428,6 +442,7 @@ export function createAttachmentBatchReview(input: AttachmentBatchReviewInput): 
       voiceParts: input.voiceParts.map((part) => ({ ...part })),
       existingAttachments: (input.existingAttachments ?? []).map((attachment) => ({ ...attachment })),
       rows,
+      primarySuggestionCleared: false,
     }),
   );
 }
@@ -538,21 +553,40 @@ export function setReviewRowPrimary(
   isPrimary: boolean,
 ): AttachmentBatchReviewState {
   const target = state.rows.find((row) => row.id === rowId);
+  const wasPrimary = target?.isPrimary ?? false;
+  // Once the Director explicitly unchecks a (possibly suggested) primary,
+  // stop auto-suggesting one for files added later in this batch.
+  const primarySuggestionCleared =
+    state.primarySuggestionCleared || (wasPrimary && !isPrimary);
   const eligible = isPrimary && !state.piece.hasPrimaryScore && Boolean(target) && isPrimaryEligible(target?.format?.value ?? null, target?.purpose?.value ?? null);
   if (!isPrimary || !eligible) {
-    return updateRow(state, rowId, (row) => ({
-      ...row,
-      isPrimary: false,
-      primaryMarker: null,
-    }));
+    return recomputeDerivedReviewState({
+      ...state,
+      primarySuggestionCleared,
+      rows: state.rows.map((row) =>
+        row.id === rowId ? { ...row, isPrimary: false, primaryMarker: null } : row,
+      ),
+    });
   }
   return recomputeDerivedReviewState({
     ...state,
+    primarySuggestionCleared,
     rows: state.rows.map((row) =>
       row.id === rowId
         ? { ...row, included: true, isPrimary: true, primaryMarker: "provided" }
         : { ...row, isPrimary: false, primaryMarker: null },
     ),
+  });
+}
+
+/** Removes a row entirely (e.g. a cancelled upload) so it cannot be re-included. */
+export function removeReviewRow(
+  state: AttachmentBatchReviewState,
+  rowId: string,
+): AttachmentBatchReviewState {
+  return recomputeDerivedReviewState({
+    ...state,
+    rows: state.rows.filter((row) => row.id !== rowId),
   });
 }
 
@@ -631,4 +665,34 @@ export function validateAttachmentBatchReview(state: AttachmentBatchReviewState)
 
 export function canPublishAttachmentBatchReview(state: AttachmentBatchReviewState): boolean {
   return validateAttachmentBatchReview(state).length === 0;
+}
+
+export interface FinishBlockerInput {
+  review: AttachmentBatchReviewState | null;
+  /** Uploads still queued or actively uploading. */
+  queuedOrUploadingCount: number;
+  /** Uploads that failed and need a Retry or Cancel. */
+  failedCount: number;
+}
+
+/**
+ * A short, human-readable explanation of why Finish is disabled, or null if
+ * nothing is blocking it. Batch-level (upload) blockers take priority over
+ * row-level validation, since a Director can't fix a row's format while its
+ * file is still uploading.
+ */
+export function describeFinishBlocker(input: FinishBlockerInput): string | null {
+  if (!input.review) return null;
+  if (input.queuedOrUploadingCount > 0) {
+    return `${input.queuedOrUploadingCount} file${input.queuedOrUploadingCount === 1 ? "" : "s"} still uploading`;
+  }
+  if (input.failedCount > 0) {
+    return `${input.failedCount} upload${input.failedCount === 1 ? "" : "s"} failed — retry or cancel them`;
+  }
+  const issues = validateAttachmentBatchReview(input.review);
+  if (issues.length === 0) return null;
+  if (issues.some((issue) => issue.code === "noIncludedRows")) {
+    return "No files included";
+  }
+  return "Fix the highlighted rows";
 }

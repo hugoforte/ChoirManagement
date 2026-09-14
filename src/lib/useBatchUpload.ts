@@ -1,9 +1,8 @@
 import { useMutation } from "convex/react";
 import type { FunctionReference } from "convex/server";
-import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   BatchUploadManager,
-  type BatchUploadManagerOptions,
   type BatchUploadSnapshot,
   type StorageId,
   type UploadedFile,
@@ -43,39 +42,46 @@ export function useBatchUpload<Mutation extends GenerateUploadUrlMutation>(
   // mutation errors through its per-file/global error state instead.
   const registerRef = useRef(options.registerUpload);
   const discardRef = useRef(options.discardUnreferenced);
-  registerRef.current = options.registerUpload;
-  discardRef.current = options.discardUnreferenced;
+  // Keep the refs current without writing to them during render (writing
+  // during render is impure and only "worked" here because nothing in
+  // render observed the write back). An effect that runs after every
+  // render is the React-sanctioned place for this.
+  useEffect(() => {
+    registerRef.current = options.registerUpload;
+    discardRef.current = options.discardUnreferenced;
+  });
 
-  const callbackAdapters = useMemo<Pick<BatchUploadManagerOptions, "registerUpload" | "discardUnreferenced">>(
-    () => ({
-      registerUpload: (upload) => registerRef.current?.(upload),
-      discardUnreferenced: async (storageIds) => {
-        const discard = discardRef.current;
-        if (!discard) throw new Error("No cleanup handler was configured");
-        await discard(storageIds);
-      },
-    }),
-    [],
-  );
-  const transport = useMemo(
-    () =>
-      options.transport ??
-      createBrowserUploadTransport(async () => {
-        // A zero-argument Convex mutation is represented by OptionalRestArgs;
-        // the constraint above guarantees this cast has no runtime arguments.
-        return await (generateUrlMutation as unknown as () => Promise<string>)();
-      }),
-    [generateUrlMutation, options.transport],
-  );
-  const manager = useMemo(
+  // The manager owns an in-flight upload queue with live AbortControllers.
+  // It used to be created with useMemo keyed on options/transport, so any
+  // caller passing a fresh inline options object (or changing
+  // maxConcurrent/transport) mid-batch silently swapped in a brand new
+  // manager and orphaned whatever that old manager was uploading. It's
+  // created exactly once now, for the hook's lifetime, via this lazy
+  // useState initializer. `registerUpload` and `discardUnreferenced` still
+  // track later prop changes through the refs above. `transport`,
+  // `maxConcurrent`, and `largeFileWarningBytes` do not: BatchUploadManager
+  // has no setters for them, so they're intentionally read once here, on
+  // mount, and a later change to those specific props has no effect.
+  const [manager] = useState(
     () =>
       new BatchUploadManager({
-        transport,
+        transport:
+          options.transport ??
+          createBrowserUploadTransport(async () => {
+            // A zero-argument Convex mutation is represented by
+            // OptionalRestArgs; the constraint above guarantees this cast
+            // has no runtime arguments.
+            return await (generateUrlMutation as unknown as () => Promise<string>)();
+          }),
         maxConcurrent: options.maxConcurrent,
         largeFileWarningBytes: options.largeFileWarningBytes,
-        ...callbackAdapters,
+        registerUpload: (upload) => registerRef.current?.(upload),
+        discardUnreferenced: async (storageIds) => {
+          const discard = discardRef.current;
+          if (!discard) throw new Error("No cleanup handler was configured");
+          await discard(storageIds);
+        },
       }),
-    [callbackAdapters, options.largeFileWarningBytes, options.maxConcurrent, transport],
   );
   const subscribe = useCallback((listener: () => void) => manager.subscribe(listener), [manager]);
   const getSnapshot = useCallback(() => manager.getSnapshot(), [manager]);
