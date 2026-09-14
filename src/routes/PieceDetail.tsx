@@ -8,10 +8,19 @@ import {
   createAttachmentPresentation,
   type PresentedAttachment,
 } from "../lib/attachmentPresentation";
+import { downloadAttachment } from "../lib/downloadAttachment";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { linkClass } from "../design/forms";
 import { SynchronizedAudioPlayer } from "../components/attachments/SynchronizedAudioPlayer";
 import NotFound from "./NotFound";
+
+function partFilterButtonClass(pressed: boolean): string {
+  return `rounded-md px-3 py-1 text-sm ${
+    pressed
+      ? "bg-brand-600 text-white"
+      : "border border-stone-300 text-stone-700 hover:bg-stone-50 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+  }`;
+}
 
 export default function PieceDetail() {
   return <MemberPage title="Music Library">{() => <PieceDetailContent />}</MemberPage>;
@@ -58,14 +67,18 @@ function AttachmentMetadata({ attachment }: { attachment: PresentedAttachment })
 
 function AttachmentDownload({ attachment }: { attachment: PresentedAttachment }) {
   if (!attachment.download.available) return null;
+  const url = attachment.download.url;
   return (
-    <a
-      href={attachment.download.url ?? undefined}
-      download={attachment.downloadName}
+    <button
+      type="button"
+      onClick={() => {
+        if (url) void downloadAttachment(url, attachment.downloadName);
+      }}
       className={linkClass}
+      aria-label={`Download ${attachment.downloadName}`}
     >
-      Download {attachment.downloadName}
-    </a>
+      Download
+    </button>
   );
 }
 
@@ -76,7 +89,7 @@ function AttachmentItem({ attachment }: { attachment: PresentedAttachment }) {
   return (
     <article className="rounded-lg border border-stone-200 p-4 dark:border-stone-700">
       <h4 className="text-sm font-medium text-stone-900 dark:text-stone-100">
-        {attachment.displayName}
+        {attachment.label}
       </h4>
       <AttachmentMetadata attachment={attachment} />
 
@@ -108,7 +121,17 @@ function AttachmentItem({ attachment }: { attachment: PresentedAttachment }) {
           {isDownloadOnly && (
             <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">Download only</p>
           )}
-          <p className="mt-3">
+          <p className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
+            {preview.kind === "pdf" && (
+              <a
+                href={preview.url ?? undefined}
+                className={linkClass}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open {attachment.displayName}
+              </a>
+            )}
             <AttachmentDownload attachment={attachment} />
           </p>
         </>
@@ -240,6 +263,35 @@ function PieceDetailContent() {
         </p>
       )}
 
+      {presentation.availablePartFilters.length > 0 && (
+        <fieldset className="mt-4 rounded-xl border border-stone-200 bg-stone-50 p-3 dark:border-stone-700 dark:bg-stone-950">
+          <legend className="px-1 text-sm font-semibold text-stone-900 dark:text-stone-100">
+            Parts
+          </legend>
+          <div className="mt-2 flex flex-wrap gap-2" aria-label="Filter files by voice part">
+            <button
+              type="button"
+              aria-pressed={selectedPartId === null}
+              onClick={() => setSelectedPartId(null)}
+              className={partFilterButtonClass(selectedPartId === null)}
+            >
+              All parts
+            </button>
+            {presentation.availablePartFilters.map((part) => (
+              <button
+                key={part.id}
+                type="button"
+                aria-pressed={selectedPartId === part.id}
+                onClick={() => setSelectedPartId(part.id)}
+                className={partFilterButtonClass(selectedPartId === part.id)}
+              >
+                {part.name}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
       {!hasAttachments ? (
         <p className="mt-6 text-sm text-stone-500 dark:text-stone-400">No files attached.</p>
       ) : (
@@ -248,46 +300,10 @@ function PieceDetailContent() {
             {presentation.primaryAction ? (
               <MainScoreWorkspace attachment={presentation.primaryAction.attachment} />
             ) : (
-              <section className="flex min-h-64 items-center justify-center rounded-xl border border-dashed border-stone-300 bg-stone-50 p-6 text-center dark:border-stone-700 dark:bg-stone-950">
-                <div>
-                  <h2 className="font-semibold text-stone-900 dark:text-stone-100">Main score</h2>
-                  <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-                    No primary score has been selected for this Piece.
-                  </p>
-                </div>
-              </section>
+              <p className="text-sm text-stone-500 dark:text-stone-400">No main score yet.</p>
             )}
 
             <aside data-testid="audio-rail" className="space-y-4 xl:sticky xl:top-6">
-              {presentation.availablePartFilters.length > 0 && (
-                <fieldset className="rounded-xl border border-stone-200 bg-stone-50 p-3 dark:border-stone-700 dark:bg-stone-950">
-                  <legend className="px-1 text-sm font-semibold text-stone-900 dark:text-stone-100">
-                    Parts
-                  </legend>
-                  <div className="mt-2 flex flex-wrap gap-2" aria-label="Filter files by voice part">
-                    <button
-                      type="button"
-                      aria-pressed={selectedPartId === null}
-                      onClick={() => setSelectedPartId(null)}
-                      className="rounded-md border border-stone-300 px-3 py-1 text-sm text-stone-700 dark:border-stone-600 dark:text-stone-200"
-                    >
-                      All parts
-                    </button>
-                    {presentation.availablePartFilters.map((part) => (
-                      <button
-                        key={part.id}
-                        type="button"
-                        aria-pressed={selectedPartId === part.id}
-                        onClick={() => setSelectedPartId(part.id)}
-                        className="rounded-md border border-stone-300 px-3 py-1 text-sm text-stone-700 dark:border-stone-600 dark:text-stone-200"
-                      >
-                        {part.name}
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
-              )}
-
               <SynchronizedAudioPlayer
                 key={audioAttachments.map((attachment) => attachment.id).join("|")}
                 attachments={audioAttachments}

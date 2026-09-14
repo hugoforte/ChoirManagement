@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { PresentedAttachment } from "../../lib/attachmentPresentation";
+import { downloadAttachment } from "../../lib/downloadAttachment";
 import { linkClass } from "../../design/forms";
 
 const DRIFT_TOLERANCE_SECONDS = 0.075;
@@ -295,7 +296,7 @@ export function SynchronizedAudioPlayer({
                         htmlFor={checkboxId}
                         className="block cursor-pointer text-sm font-medium text-stone-900 dark:text-stone-100"
                       >
-                        {attachment.displayName}
+                        {attachment.label}
                       </label>
                       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
                         {attachment.partLabel && <span>Parts: {attachment.partLabel}</span>}
@@ -310,13 +311,17 @@ export function SynchronizedAudioPlayer({
                         </p>
                       ) : (
                         <p className="mt-2 text-xs">
-                          <a
-                            href={attachment.download.url ?? undefined}
-                            download={attachment.downloadName}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const url = attachment.download.url;
+                              if (url) void downloadAttachment(url, attachment.downloadName);
+                            }}
                             className={linkClass}
+                            aria-label={`Download ${attachment.downloadName}`}
                           >
-                            Download {attachment.downloadName}
-                          </a>
+                            Download
+                          </button>
                         </p>
                       )}
                     </div>

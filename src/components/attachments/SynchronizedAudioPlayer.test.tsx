@@ -13,6 +13,7 @@ function audioAttachment(id: string, displayName: string): PresentedAttachment {
     partLabel: id === "soprano" ? "Soprano" : "Alto",
     manualOrder: 0,
     isPrimary: false,
+    label: displayName,
     displayName,
     downloadName: displayName,
     preview: {

@@ -61,9 +61,10 @@ describe("attachment presentation", () => {
     const presented = model.groups[0].attachments[0];
     expect(presented.displayName).toBe(presented.downloadName);
     expect(presented.download.filename).toBe(presented.downloadName);
+    expect(presented.label).toBe("Full Score · Soprano + Alto");
   });
 
-  it("uses a non-empty filename override for both display and download", () => {
+  it("uses a non-empty filename override for both display and download, and strips its extension for the label", () => {
     const input = attachment("score", "fullScore", {
       filenameOverride: "Concert score.pdf",
     });
@@ -72,6 +73,14 @@ describe("attachment presentation", () => {
     const presented = model.groups[0].attachments[0];
     expect(presented.displayName).toBe("Concert score.pdf");
     expect(presented.downloadName).toBe("Concert score.pdf");
+    expect(presented.label).toBe("Concert score");
+  });
+
+  it("labels a purpose without parts using only the purpose label", () => {
+    const input = attachment("score", "fullScore");
+
+    const model = createAttachmentPresentation({ piece, attachments: [input] });
+    expect(model.groups[0].attachments[0].label).toBe("Full Score");
   });
 
   it("isolates the primary attachment into an explicit main-score action", () => {

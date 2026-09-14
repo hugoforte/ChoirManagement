@@ -176,27 +176,68 @@ describe("PieceDetail", () => {
     const audioPlayers = screen.getByTestId("audio-rail").querySelectorAll("audio");
     expect(audioPlayers).toHaveLength(2);
     expect([...audioPlayers].every((player) => !player.controls)).toBe(true);
-    expect(screen.getAllByRole("checkbox", { name: /rehearsal\.mp3/u })).toHaveLength(2);
+    expect(screen.getAllByRole("checkbox", { name: /rehearsal$/u })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Play selected tracks" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Preview of Cover image.png" })).toHaveAttribute(
       "src",
       "https://files.example/cover",
     );
     expect(screen.getByText("Download only")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Download Main score.pdf" })).toHaveAttribute(
-      "download",
-      "Main score.pdf",
-    );
+    expect(screen.getByRole("button", { name: "Download Main score.pdf" })).toBeInTheDocument();
     expect(screen.getByText("This file is currently unavailable.")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Download Unavailable lyrics.pdf" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Download Unavailable lyrics.pdf" }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Soprano" }));
 
     expect(screen.getByRole("button", { name: "Soprano" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("Soprano rehearsal.mp3")).toBeInTheDocument();
-    expect(screen.queryByText("Alto + Tenor rehearsal.mp3")).not.toBeInTheDocument();
+    expect(screen.getByText("Soprano rehearsal")).toBeInTheDocument();
+    expect(screen.queryByText("Alto + Tenor rehearsal")).not.toBeInTheDocument();
     expect(screen.getByTestId("audio-rail").querySelectorAll("audio")).toHaveLength(1);
-    expect(screen.getByRole("checkbox", { name: "Soprano rehearsal.mp3" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Soprano rehearsal" })).toBeChecked();
     expect(screen.getByText("Main score.pdf")).toBeInTheDocument();
+  });
+
+  it("shows a muted placeholder instead of a large dashed box when there is no main score", () => {
+    memberDetail = {
+      piece: { _id: "piece-1", title: "Ode to Joy", composer: "Beethoven" },
+      attachments: [
+        attachment("soprano", {
+          format: "audio",
+          purpose: "partRehearsal",
+          parts: [soprano],
+          filename: "Soprano.mp3",
+          filenameOverride: "Soprano rehearsal.mp3",
+        }),
+      ],
+    };
+
+    renderDetail();
+
+    expect(screen.getByText("No main score yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Main score" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Audio tracks" })).toBeInTheDocument();
+  });
+
+  it("gives every PDF card in Other files an Open link next to Download", () => {
+    memberDetail = {
+      piece: { _id: "piece-1", title: "Ode to Joy", composer: "Beethoven" },
+      attachments: [
+        attachment("lyrics", {
+          purpose: "lyricsText",
+          filename: "Lyrics.pdf",
+          filenameOverride: "Lyrics sheet.pdf",
+        }),
+      ],
+    };
+
+    renderDetail();
+
+    const openLink = screen.getByRole("link", { name: "Open Lyrics sheet.pdf" });
+    expect(openLink).toHaveAttribute("href", "https://files.example/lyrics");
+    expect(openLink).toHaveAttribute("target", "_blank");
+    expect(openLink).toHaveAttribute("rel", "noreferrer");
+    expect(screen.getByRole("button", { name: "Download Lyrics sheet.pdf" })).toBeInTheDocument();
   });
 });

@@ -48,7 +48,7 @@ export type ClassificationResult =
   | { ok: true; suggestion: AttachmentSuggestion }
   | { ok: false; reason: "empty" | "executable"; message: string };
 
-const PURPOSE_LABELS: Record<AttachmentPurpose, string> = {
+export const PURPOSE_LABELS: Record<AttachmentPurpose, string> = {
   fullScore: "Full Score",
   partScore: "Part Score",
   accompanimentScore: "Accompaniment Score",

@@ -1,5 +1,6 @@
 import {
   generateStandardizedFilename,
+  PURPOSE_LABELS,
   type AttachmentFormat,
   type AttachmentPurpose,
   type VoicePart,
@@ -64,6 +65,13 @@ export interface PresentedAttachment {
   partLabel: string | null;
   manualOrder: number;
   isPrimary: boolean;
+  /**
+   * Short label for headings and checkbox labels: the filename override
+   * (without its extension) when set, otherwise the purpose label plus the
+   * part label. Avoids repeating the piece title/composer that
+   * `displayName`/`downloadName` carry via the standardized filename.
+   */
+  label: string;
   displayName: string;
   downloadName: string;
   preview: AttachmentPreview;
@@ -220,6 +228,20 @@ function effectiveName(
   return override || standardizedName(piece, attachment);
 }
 
+function withoutExtension(filename: string): string {
+  return filename.replace(/\.[^./\\]+$/u, "");
+}
+
+function attachmentLabel(
+  attachment: PresentationAttachmentInput,
+  partLabel: string | null,
+): string {
+  const override = attachment.filenameOverride?.trim();
+  if (override) return withoutExtension(override);
+  const purposeLabel = PURPOSE_LABELS[attachment.purpose];
+  return partLabel ? `${purposeLabel} · ${partLabel}` : purposeLabel;
+}
+
 export function previewKindForFormat(format: AttachmentFormat): PreviewKind {
   if (format === "pdf") return "pdf";
   if (format === "audio") return "audio";
@@ -245,14 +267,16 @@ function presentAttachment(
   const parts = orderedParts(attachment.parts);
   const name = effectiveName(piece, attachment);
   const preview = attachmentPreview(attachment.format, attachment.url);
+  const partLabel = parts.length ? parts.map((part) => part.name).join(" + ") : null;
   return {
     id: attachment.id,
     format: attachment.format,
     purpose: attachment.purpose,
     parts,
-    partLabel: parts.length ? parts.map((part) => part.name).join(" + ") : null,
+    partLabel,
     manualOrder: attachment.manualOrder,
     isPrimary: attachment.isPrimary,
+    label: attachmentLabel(attachment, partLabel),
     displayName: name,
     downloadName: name,
     preview,

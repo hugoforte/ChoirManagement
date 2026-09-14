@@ -84,25 +84,23 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
   await expect(page.getByRole("link", { name: "Open main score" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Audio tracks", exact: true })).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /Download .*Full Score\.pdf/ }),
+    page.getByRole("button", { name: /Download .*Full Score\.pdf/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /Download .*Editable Full Score\.mscz/ }),
+    page.getByRole("button", { name: /Download .*Editable Full Score\.mscz/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /Download .*Part Rehearsal - Tenor\.mp3/ }),
+    page.getByRole("button", { name: /Download .*Part Rehearsal - Tenor\.mp3/ }),
   ).toBeVisible();
   await expect(page.locator("iframe[title^='Preview of']")).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: /Part Rehearsal - Tenor\.mp3/ })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Part Rehearsal · Tenor" })).toBeChecked();
   await expect(page.getByRole("button", { name: "Play selected tracks" })).toBeVisible();
   await expect(page.getByLabel("Playback position")).toBeVisible();
   await expect(page.locator("img[alt^='Preview of']")).toBeVisible();
 
   await page.getByRole("button", { name: "Tenor" }).click();
+  await expect(page.getByRole("checkbox", { name: "Part Rehearsal · Tenor" })).toBeChecked();
   await expect(
-    page.getByRole("link", { name: /Download .*Part Rehearsal - Tenor\.mp3/ }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /Download .*Editable Full Score\.mscz/ }),
+    page.getByRole("button", { name: /Download .*Editable Full Score\.mscz/ }),
   ).toBeVisible();
 });
