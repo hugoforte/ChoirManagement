@@ -13,6 +13,8 @@ import { editedAt } from "../lib/bulletin";
 import { formatTimestamp } from "../lib/datetime";
 import { ShareLinkPanel } from "../components/bulletins/ShareLinkPanel";
 import { Markdown } from "../design/Markdown";
+import { RemarksEditor } from "../components/bulletins/RemarksEditor";
+import { RemarksList } from "../components/bulletins/RemarksList";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { inputClass, labelClass, primaryButtonClass } from "../design/forms";
 import NotFound from "./NotFound";
@@ -39,6 +41,9 @@ function BulletinManageDetailContent() {
   // The anchor picker offers every Event, past ones included: a Bulletin is
   // usually written about the rehearsal that just happened.
   const events = useQuery(api.events.list, { now });
+  // Also subscribed inside RemarksEditor; Convex dedupes identical query
+  // subscriptions, so the preview reading it here costs nothing extra.
+  const remarks = useQuery(api.bulletinRemarks.listForBulletin, { bulletinId: id });
   const { run: updateBulletin, pending: saving, error: saveError } = useTrackedMutation(api.bulletins.update);
   const { run: publishBulletin, pending: publishing, error: publishError } = useTrackedMutation(
     api.bulletins.publish,
@@ -161,9 +166,16 @@ function BulletinManageDetailContent() {
             {error && <p className="text-sm text-danger">{error}</p>}
           </form>
 
+          <div className="border-t border-stone-200 pt-3 dark:border-stone-800">
+            <RemarksEditor bulletinId={id} eventId={bulletin.eventId} />
+          </div>
+
           <section className="border-t border-stone-200 pt-3 dark:border-stone-800">
             <h2 className={labelClass}>Preview</h2>
             <Markdown source={fields.body} className="mt-2 text-sm text-stone-700 dark:text-stone-300" />
+            <div className="mt-3">
+              <RemarksList remarks={remarks ?? []} />
+            </div>
           </section>
 
           <ShareLinkPanel bulletinId={id} published={bulletin.status === "published"} />
