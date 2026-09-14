@@ -20,6 +20,7 @@ import type * as pieceAttachments from "../pieceAttachments.js";
 import type * as pieces from "../pieces.js";
 import type * as public_ from "../public.js";
 import type * as seed from "../seed.js";
+import type * as voiceParts from "../voiceParts.js";
 
 import type {
   ApiFromModules,
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   pieces: typeof pieces;
   public: typeof public_;
   seed: typeof seed;
+  voiceParts: typeof voiceParts;
 }>;
 
 /**

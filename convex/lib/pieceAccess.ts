@@ -9,8 +9,15 @@ export async function requirePieceAccess(
   ctx: QueryCtx | MutationCtx,
   pieceId: Id<"pieces">,
 ): Promise<Doc<"pieces">> {
-  await requireMember(ctx);
-  const piece = await ctx.db.get("pieces", pieceId);
+  const piece = await findPieceWithAccess(ctx, pieceId);
   if (!piece) throw new Error("Piece not found");
   return piece;
+}
+
+export async function findPieceWithAccess(
+  ctx: QueryCtx | MutationCtx,
+  pieceId: Id<"pieces">,
+): Promise<Doc<"pieces"> | null> {
+  await requireMember(ctx);
+  return await ctx.db.get("pieces", pieceId);
 }
