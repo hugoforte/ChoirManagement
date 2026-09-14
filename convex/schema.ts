@@ -250,7 +250,9 @@ export default defineSchema({
     description: v.optional(v.string()),
     location: v.optional(v.string()),
     status: v.union(v.literal("open"), v.literal("closed")),
-    // Advisory only: a deadline passing never auto-closes a Poll.
+    // Advisory only: a deadline passing never auto-closes a Poll. Stored as
+    // the last millisecond of the chosen local day (#84), so "responses by
+    // 1 March" includes all of 1 March.
     deadlineAt: v.optional(v.number()),
     // Set when the Poll closes on a winner. A Poll may also close with no
     // winner, in which case both this and resultingEventId stay absent.
