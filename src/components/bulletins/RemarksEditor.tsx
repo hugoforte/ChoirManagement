@@ -57,7 +57,15 @@ export function RemarksEditor({
 
   async function handleAdd() {
     if (newPieceId === NO_PIECE) return;
-    await addRemark({ bulletinId, pieceId: newPieceId as Id<"pieces">, text: newText });
+    const remarkId = await addRemark({
+      bulletinId,
+      pieceId: newPieceId as Id<"pieces">,
+      text: newText,
+    });
+    // useTrackedMutation swallows the rejection and returns undefined rather
+    // than throwing, so a failed add would otherwise clear the form and lose
+    // what the Director typed — with only the error line to show for it.
+    if (remarkId === undefined) return;
     setNewPieceId(NO_PIECE);
     setNewText("");
   }
@@ -66,7 +74,11 @@ export function RemarksEditor({
     // One at a time, not Promise.all: displayOrder is read from the last
     // existing row, so concurrent adds would race onto the same number.
     for (const piece of unremarkedSetlist) {
-      await addRemark({ bulletinId, pieceId: piece._id, text: "" });
+      const remarkId = await addRemark({ bulletinId, pieceId: piece._id, text: "" });
+      // Same undefined-means-failure contract: stop at the first failure
+      // instead of firing the rest of the Setlist at a backend that has
+      // already refused one.
+      if (remarkId === undefined) break;
     }
   }
 
