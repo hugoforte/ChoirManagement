@@ -186,8 +186,15 @@ export const remove = mutation({
     if (bulletin.status === "published") {
       await requireCan(ctx, "deletePublishedBulletins");
     }
-    // Remarks are owned by their Bulletin and cascade from here; #81 adds
-    // that cascade along with the table's first writer.
+    // Remarks are owned by their Bulletin (#49), so they go with it —
+    // otherwise they would linger on the by_piece_id index the Piece
+    // reverse lookup reads.
+    const remarks = await ctx.db
+      .query("bulletinRemarks")
+      .withIndex("by_bulletin_id_and_display_order", (q) => q.eq("bulletinId", bulletinId))
+      .collect();
+    await Promise.all(remarks.map((remark) => ctx.db.delete("bulletinRemarks", remark._id)));
+
     await ctx.db.delete("bulletins", bulletinId);
     return null;
   },
