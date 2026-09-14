@@ -93,7 +93,9 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
     page.getByRole("link", { name: /Download .*Part Rehearsal - Tenor\.mp3/ }),
   ).toBeVisible();
   await expect(page.locator("iframe[title^='Preview of']")).toBeVisible();
-  await expect(page.locator("audio")).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /Part Rehearsal - Tenor\.mp3/ })).toBeChecked();
+  await expect(page.getByRole("button", { name: "Play selected tracks" })).toBeVisible();
+  await expect(page.getByLabel("Playback position")).toBeVisible();
   await expect(page.locator("img[alt^='Preview of']")).toBeVisible();
 
   await page.getByRole("button", { name: "Tenor" }).click();

@@ -65,7 +65,10 @@ function attachment(
 
 let memberDetail: unknown;
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 function renderDetail() {
   return render(
@@ -78,6 +81,7 @@ function renderDetail() {
 }
 
 beforeEach(() => {
+  vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
   memberDetail = {
     piece: {
       _id: "piece-1",
@@ -171,7 +175,9 @@ describe("PieceDetail", () => {
     expect(scoreWorkspace.querySelector("iframe[title='Preview of Main score.pdf']")).not.toBeNull();
     const audioPlayers = screen.getByTestId("audio-rail").querySelectorAll("audio");
     expect(audioPlayers).toHaveLength(2);
-    expect([...audioPlayers].every((player) => player.controls)).toBe(true);
+    expect([...audioPlayers].every((player) => !player.controls)).toBe(true);
+    expect(screen.getAllByRole("checkbox", { name: /rehearsal\.mp3/u })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Play selected tracks" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Preview of Cover image.png" })).toHaveAttribute(
       "src",
       "https://files.example/cover",
@@ -190,6 +196,7 @@ describe("PieceDetail", () => {
     expect(screen.getByText("Soprano rehearsal.mp3")).toBeInTheDocument();
     expect(screen.queryByText("Alto + Tenor rehearsal.mp3")).not.toBeInTheDocument();
     expect(screen.getByTestId("audio-rail").querySelectorAll("audio")).toHaveLength(1);
+    expect(screen.getByRole("checkbox", { name: "Soprano rehearsal.mp3" })).toBeChecked();
     expect(screen.getByText("Main score.pdf")).toBeInTheDocument();
   });
 });

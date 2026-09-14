@@ -10,6 +10,7 @@ import {
 } from "../lib/attachmentPresentation";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { linkClass } from "../design/forms";
+import { SynchronizedAudioPlayer } from "../components/attachments/SynchronizedAudioPlayer";
 import NotFound from "./NotFound";
 
 export default function PieceDetail() {
@@ -159,37 +160,6 @@ function MainScoreWorkspace({ attachment }: { attachment: PresentedAttachment })
   );
 }
 
-function AudioTrack({ attachment }: { attachment: PresentedAttachment }) {
-  return (
-    <article className="rounded-lg border border-stone-200 bg-white p-3 dark:border-stone-700 dark:bg-stone-900">
-      <h3 className="text-sm font-medium text-stone-900 dark:text-stone-100">
-        {attachment.displayName}
-      </h3>
-      <AttachmentMetadata attachment={attachment} />
-      {attachment.preview.available ? (
-        <>
-          <audio
-            aria-label={`Play ${attachment.displayName}`}
-            controls
-            preload="metadata"
-            src={attachment.preview.url ?? undefined}
-            className="mt-3 w-full"
-          >
-            Your browser does not support audio previews.
-          </audio>
-          <p className="mt-2 text-xs">
-            <AttachmentDownload attachment={attachment} />
-          </p>
-        </>
-      ) : (
-        <p className="mt-3 text-sm text-amber-700 dark:text-amber-300" role="status">
-          This file is currently unavailable.
-        </p>
-      )}
-    </article>
-  );
-}
-
 function PieceDetailContent() {
   const { pieceId } = useParams<{ pieceId: string }>();
   const detail = useQuery(api.pieceAttachments.getMemberDetail, {
@@ -318,30 +288,10 @@ function PieceDetailContent() {
                 </fieldset>
               )}
 
-              <section aria-labelledby="audio-tracks-heading" className="rounded-xl border border-stone-200 bg-stone-50 p-3 dark:border-stone-700 dark:bg-stone-950">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 id="audio-tracks-heading" className="font-semibold text-stone-900 dark:text-stone-100">
-                    Audio tracks
-                  </h2>
-                  <span className="rounded-full bg-stone-200 px-2 py-0.5 text-xs font-medium text-stone-600 dark:bg-stone-800 dark:text-stone-300">
-                    {audioAttachments.length}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
-                  Each player is independent, so you can play several tracks together.
-                </p>
-                {audioAttachments.length > 0 ? (
-                  <div className="mt-3 space-y-3">
-                    {audioAttachments.map((attachment) => (
-                      <AudioTrack key={attachment.id} attachment={attachment} />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">
-                    No audio tracks for this selection.
-                  </p>
-                )}
-              </section>
+              <SynchronizedAudioPlayer
+                key={audioAttachments.map((attachment) => attachment.id).join("|")}
+                attachments={audioAttachments}
+              />
             </aside>
           </div>
 
