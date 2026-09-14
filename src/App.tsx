@@ -13,6 +13,7 @@ import EventDetail from "./routes/EventDetail";
 import EventsManage from "./routes/EventsManage";
 import EventManageDetail from "./routes/EventManageDetail";
 import Bulletins from "./routes/Bulletins";
+import BulletinDetail from "./routes/BulletinDetail";
 import BulletinsManage from "./routes/BulletinsManage";
 import BulletinManageDetail from "./routes/BulletinManageDetail";
 import Polls from "./routes/Polls";
@@ -43,6 +44,9 @@ export default function App() {
       <Route path="/bulletins" element={<Bulletins />} />
       <Route path="/bulletins/manage" element={<BulletinsManage />} />
       <Route path="/bulletins/manage/:bulletinId" element={<BulletinManageDetail />} />
+      {/* After the two /bulletins/manage paths, so "manage" is never read as a
+          Bulletin id — the same ordering as /events and /library above. */}
+      <Route path="/bulletins/:bulletinId" element={<BulletinDetail />} />
       <Route path="/polls" element={<Polls />} />
       <Route path="/polls/manage" element={<PollsManage />} />
       <Route path="/polls/manage/:pollId" element={<PollManageDetail />} />

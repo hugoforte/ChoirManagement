@@ -4,13 +4,18 @@
 // slate/teal, while keeping the same dense, structured layout everywhere.
 import { Link, useLocation } from "react-router-dom";
 import { SignOutButton } from "@clerk/clerk-react";
+import { useQuery } from "convex/react";
+
+import { api } from "../../convex/_generated/api";
 import { initials } from "../lib/initials";
 import { ThemeToggle } from "./ThemeToggle";
+
+const BULLETINS_PATH = "/bulletins";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" },
   { to: "/events", label: "Events", icon: "M4 5h16M4 11h16M4 17h10" },
-  { to: "/bulletins", label: "Bulletins", icon: "M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h4" },
+  { to: BULLETINS_PATH, label: "Bulletins", icon: "M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h4" },
   { to: "/polls", label: "Polls", icon: "M5 20V9M12 20V4M19 20v-7" },
   { to: "/library", label: "Library", icon: "M5 4h10a2 2 0 012 2v14l-7-3-7 3V6a2 2 0 012-2z" },
   { to: "/members", label: "Roster", icon: "M12 12a4 4 0 100-8 4 4 0 000 8zM4 20c0-4 4-6 8-6s8 2 8 6" },
@@ -37,6 +42,11 @@ export function AppShell({
 }) {
   const location = useLocation();
   const allNavItems = showSettings ? [...NAV_ITEMS, SETTINGS_ITEM] : NAV_ITEMS;
+  // requireMember-backed, and safe to subscribe to unconditionally here:
+  // AppShell only ever renders inside MemberPage's ResolvedMemberPage, which
+  // exists precisely because members.viewer has to resolve to a real Member
+  // before any such query may run (AGENTS.md; see #27).
+  const hasUnreadBulletins = useQuery(api.bulletins.hasUnread);
 
   return (
     <div className="flex min-h-screen bg-stone-50 text-stone-900 dark:bg-stone-950 dark:text-stone-100">
@@ -66,6 +76,9 @@ export function AppShell({
                   <path d={item.icon} strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 {item.label}
+                {item.to === BULLETINS_PATH && hasUnreadBulletins === true && (
+                  <UnreadDot className="ml-auto h-2 w-2" />
+                )}
               </Link>
             );
           })}
@@ -128,11 +141,29 @@ export function AppShell({
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}>
                 <path d={item.icon} strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              {item.label}
+              <span className="flex items-center gap-1">
+                {item.label}
+                {item.to === BULLETINS_PATH && hasUnreadBulletins === true && (
+                  <UnreadDot className="h-1.5 w-1.5" />
+                )}
+              </span>
             </Link>
           );
         })}
       </nav>
     </div>
+  );
+}
+
+// A dot rather than a count: the unread marker is a single timestamp on the
+// Member (#49), so the app genuinely doesn't know how many Bulletins are new
+// to this reader — only that at least one is.
+function UnreadDot({ className }: { className: string }) {
+  return (
+    <span
+      role="status"
+      aria-label="Unread Bulletins"
+      className={`shrink-0 rounded-full bg-brand-600 dark:bg-brand-400 ${className}`}
+    />
   );
 }

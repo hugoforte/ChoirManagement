@@ -48,6 +48,10 @@ function mockQueries({
     const name = getFunctionName(query);
     if (name === getFunctionName(api.members.viewer)) return viewerValue;
     if (name === getFunctionName(api.choirSettings.get)) return choirSettings;
+    // AppShell subscribes to this for the Bulletins unread dot (#82), and
+    // only ever renders once viewer is a real Member — which is the gate
+    // these tests are about.
+    if (name === getFunctionName(api.bulletins.hasUnread)) return false;
     throw new Error(`Unexpected useQuery call: ${name}`);
   }) as typeof useQuery);
 }
