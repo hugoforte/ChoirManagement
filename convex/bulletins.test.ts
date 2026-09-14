@@ -190,6 +190,46 @@ test("an edit after publishing bumps updatedAt but leaves publishedAt alone", as
   expect(edited?.status).toBe("published");
 });
 
+test("saving an unchanged published Bulletin does not mark it edited", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const bulletinId = await asDirector.mutation(api.bulletins.createDraft, { title: "Notes" });
+  await asDirector.mutation(api.bulletins.update, { bulletinId, body: "Call time is 6:45." });
+  await asDirector.mutation(api.bulletins.publish, { bulletinId });
+  // Backdate both timestamps, so a bump would be unmistakable rather than
+  // hidden by the two mutations landing within the same millisecond.
+  await t.run(
+    async (ctx) => await ctx.db.patch("bulletins", bulletinId, { publishedAt: 500, updatedAt: 500 }),
+  );
+
+  // The editor posts the whole form on every Save, so a Director opening a
+  // published Bulletin and pressing Save without typing must not stamp it.
+  await asDirector.mutation(api.bulletins.update, {
+    bulletinId,
+    title: "Notes",
+    body: "Call time is 6:45.",
+    eventId: null,
+  });
+
+  const after = await t.run(async (ctx) => await ctx.db.get("bulletins", bulletinId));
+  expect(after?.updatedAt).toBe(500);
+});
+
+test("listAll labels every Bulletin sharing one Event anchor with that Event's title", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const eventId = await insertEvent(t, "Spring Concert");
+  for (const title of ["First", "Second", "Third"]) {
+    const bulletinId = await asDirector.mutation(api.bulletins.createDraft, { title });
+    await asDirector.mutation(api.bulletins.update, { bulletinId, eventId });
+  }
+
+  const list = await asDirector.query(api.bulletins.listAll, {});
+  expect(list.map((b) => b.eventTitle)).toEqual(["Spring Concert", "Spring Concert", "Spring Concert"]);
+});
+
 test("update records the editing Member and can clear the Event anchor", async () => {
   const t = convexTest(schema, modules);
   const { adminId } = await seedMembers(t);

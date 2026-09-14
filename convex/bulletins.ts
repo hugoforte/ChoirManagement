@@ -17,12 +17,12 @@ const bulletinListEntry = v.object({
   eventTitle: v.union(v.string(), v.null()),
 });
 
+const PAGE_LIMIT = 200;
+
 // Drafts first (newest first), then published Bulletins (most recently
 // published first) — the manage view's job is finishing the unfinished, so
 // what isn't out yet belongs at the top. Drafts have no publishedAt, so
 // within that half the index falls through to _creationTime.
-const PAGE_LIMIT = 200;
-
 export const listAll = query({
   args: {},
   returns: v.array(bulletinListEntry),
@@ -38,14 +38,25 @@ export const listAll = query({
       .withIndex("by_status_and_published_at", (q) => q.eq("status", "published"))
       .order("desc")
       .take(PAGE_LIMIT);
-    return await Promise.all(
-      [...drafts, ...published].map(async (bulletin) => ({
-        ...bulletin,
-        eventTitle: bulletin.eventId
-          ? ((await ctx.db.get("events", bulletin.eventId))?.title ?? "Unknown Event")
-          : null,
-      })),
+    const rows = [...drafts, ...published];
+
+    // An Event may accumulate several Bulletins (#49), so the same anchor
+    // recurs down the list. Fetch each distinct Event once rather than once
+    // per row that points at it.
+    const uniqueEventIds = [...new Set(rows.flatMap((b) => (b.eventId ? [b.eventId] : [])))];
+    const titleByEventId = new Map(
+      await Promise.all(
+        uniqueEventIds.map(
+          async (eventId) =>
+            [eventId, (await ctx.db.get("events", eventId))?.title ?? "Unknown Event"] as const,
+        ),
+      ),
     );
+
+    return rows.map((bulletin) => ({
+      ...bulletin,
+      eventTitle: bulletin.eventId ? (titleByEventId.get(bulletin.eventId) ?? "Unknown Event") : null,
+    }));
   },
 });
 
@@ -102,7 +113,15 @@ export const update = mutation({
 
     // updatedAt doubles as the "edited" timestamp a published Bulletin shows
     // beside its published date, so only content edits bump it — never a
-    // Share Link change (#83).
+    // Share Link change (#83), and never a save that changed nothing. The
+    // editor sends the whole form on every Save, so opening a published
+    // Bulletin and pressing Save would otherwise falsely mark it edited.
+    const unchanged =
+      (title === undefined || title === bulletin.title) &&
+      (body === undefined || body === bulletin.body) &&
+      (eventId === undefined || (eventId ?? undefined) === bulletin.eventId);
+    if (unchanged) return null;
+
     await ctx.db.patch("bulletins", bulletinId, {
       ...(title !== undefined && { title }),
       ...(body !== undefined && { body }),

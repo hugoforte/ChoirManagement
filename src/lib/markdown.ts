@@ -3,13 +3,14 @@
 // reason this file configures a renderer rather than calling one inline.
 //
 // Dependency rationale, per AGENTS.md's dependency guidelines: markdown-it
-// is the reference CommonMark implementation, actively maintained, with no
-// runtime dependencies of our own to audit and `html: false` as its default
-// — raw HTML in the source is *escaped*, not stripped by a filter that
-// could be bypassed. `marked` was the alternative, but it passes raw HTML
+// is the reference CommonMark implementation, actively maintained, ships
+// its own types, and has `html: false` as its default — raw HTML in the
+// source is *escaped*, not stripped by a filter that could be bypassed. It
+// does pull its own runtime dependencies (argparse, linkify-it, mdurl,
+// punycode.js, uc.micro). `marked` was the alternative, but it passes raw HTML
 // through and would have required a second dependency (DOMPurify) plus a
-// sanitiser config kept correct forever; one dependency with the unsafe
-// path off beats two with a filter in front of it. markdown-it also
+// sanitiser config kept correct forever; one direct dependency with the
+// unsafe path off beats two with a filter in front of it. markdown-it also
 // validates link targets, so `javascript:` and `vbscript:` URLs never reach
 // an href.
 import MarkdownIt from "markdown-it";
