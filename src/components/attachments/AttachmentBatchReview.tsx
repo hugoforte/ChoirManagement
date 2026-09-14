@@ -10,6 +10,8 @@ import {
   bulkSetReviewRowVoiceParts,
   canPublishAttachmentBatchReview,
   createAttachmentBatchReview,
+  describeFinishBlocker,
+  removeReviewRow,
   setAttachmentBatchReviewCredits,
   setReviewRowExactDuplicateDecision,
   setReviewRowDuration,
@@ -26,6 +28,7 @@ import {
   type NameCollisionDecision,
 } from "../../lib/attachmentBatchReview";
 import {
+  classifyAttachment,
   generateStandardizedFilename,
   getAllowedPurposes,
   type AttachmentFormat,
@@ -206,6 +209,7 @@ function ReviewRowEditor({
           <label>
             <input
               type="checkbox"
+              aria-label={`${row.originalFilename} Select`}
               checked={selectedForBulk}
               onChange={(event) => onSelectForBulk(event.target.checked)}
             />{" "}
@@ -214,6 +218,7 @@ function ReviewRowEditor({
           <label>
             <input
               type="checkbox"
+              aria-label={`${row.originalFilename} Include`}
               checked={row.included}
               onChange={(event) => onChange(setReviewRowIncluded(state, row.id, event.target.checked))}
             />{" "}
@@ -269,6 +274,7 @@ function ReviewRowEditor({
                 <label key={part.id} className="text-sm">
                   <input
                     type="checkbox"
+                    aria-label={`${row.originalFilename} ${part.name}`}
                     checked={row.voiceParts.value.includes(part.id)}
                     onChange={(event) => togglePart(part.id, event.target.checked)}
                   />{" "}
@@ -316,6 +322,7 @@ function ReviewRowEditor({
           <label className="text-sm md:col-span-2">
             <input
               type="checkbox"
+              aria-label={`${row.originalFilename} Primary score`}
               checked={row.isPrimary}
               onChange={(event) => onChange(setReviewRowPrimary(state, row.id, event.target.checked))}
             />{" "}
@@ -421,6 +428,7 @@ export function AttachmentBatchReview({
   const [bulkParts, setBulkParts] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
   const [cleanupError, setCleanupError] = useState<string | null>(null);
+  const [rejectedFilenames, setRejectedFilenames] = useState<string[]>([]);
 
   const parts = useMemo(
     () => reviewVoiceParts(activeVoiceParts ?? []),
@@ -497,9 +505,20 @@ export function AttachmentBatchReview({
   function addFiles(files: readonly File[]) {
     if (files.length === 0) return;
     setCleanupError(null);
-    const ids = uploads.addFiles(files);
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    for (const file of files) {
+      const classification = classifyAttachment({ name: file.name, size: file.size }, parts);
+      if (classification.ok) accepted.push(file);
+      else rejected.push(file.name);
+    }
+    if (rejected.length > 0) {
+      setRejectedFilenames((current) => [...current, ...rejected]);
+    }
+    if (accepted.length === 0) return;
+    const ids = uploads.addFiles(accepted);
     for (const [index, id] of ids.entries()) {
-      const file = files[index];
+      const file = accepted[index];
       if (!file) continue;
       void detectAudioDuration(file).then((durationSeconds) => {
         if (durationSeconds === undefined) return;
@@ -527,9 +546,7 @@ export function AttachmentBatchReview({
   }, [initialFiles, onInitialFilesAccepted, review]);
 
   async function cancelOne(upload: TrackedUpload) {
-    setReview((current) =>
-      current ? setReviewRowIncluded(current, upload.id, false) : current,
-    );
+    setReview((current) => (current ? removeReviewRow(current, upload.id) : current));
     await uploads.cancel(upload.id);
   }
 
@@ -538,6 +555,7 @@ export function AttachmentBatchReview({
     if (!cleaned) return;
     uploads.clearCompleted();
     setSelectedForBulk([]);
+    setRejectedFilenames([]);
     setReview(emptyReviewState());
   }
 
@@ -603,6 +621,7 @@ export function AttachmentBatchReview({
     }
     uploads.clearCompleted();
     setSelectedForBulk([]);
+    setRejectedFilenames([]);
     setReview(emptyReviewState());
   }
 
@@ -622,6 +641,16 @@ export function AttachmentBatchReview({
     !unresolvedUploads &&
     !publishing,
   );
+  const finishBlockerMessage =
+    !canFinish && !publishing
+      ? describeFinishBlocker({
+          review,
+          queuedOrUploadingCount: uploads.files.filter(
+            (upload) => upload.status === "queued" || upload.status === "uploading",
+          ).length,
+          failedCount: uploads.files.filter((upload) => upload.status === "failed").length,
+        })
+      : null;
 
   if (activeVoiceParts === undefined || detail === undefined || !review) {
     return <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">Loading attachment tools…</p>;
@@ -687,6 +716,22 @@ export function AttachmentBatchReview({
       {uploads.error && <p className="text-sm text-danger">{uploads.error}</p>}
       {cleanupError && <p className="text-sm text-danger">{cleanupError}</p>}
       {publishError && <p className="text-sm text-danger">{publishError}</p>}
+      {rejectedFilenames.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+          <p>
+            {rejectedFilenames.length} file{rejectedFilenames.length === 1 ? "" : "s"} were not
+            added because they are empty or an unsupported executable type:{" "}
+            {rejectedFilenames.join(", ")}
+          </p>
+          <button
+            type="button"
+            className="mt-1 text-xs underline"
+            onClick={() => setRejectedFilenames([])}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {uploads.files.map((upload) => {
         const reviewRow = review.rows.find((row) => row.id === upload.id);
@@ -743,7 +788,11 @@ export function AttachmentBatchReview({
       })}
 
       {selectedForBulk.length > 0 && (
-        <div className="rounded-lg bg-stone-50 p-3 dark:bg-stone-800" aria-label="Bulk edit selected attachments">
+        <div
+          className="rounded-lg bg-stone-50 p-3 dark:bg-stone-800"
+          role="group"
+          aria-label="Bulk edit selected attachments"
+        >
           <p className="text-sm font-medium">Edit {selectedForBulk.length} selected</p>
           <div className="mt-2 grid gap-3 md:grid-cols-2">
             <div>
@@ -782,7 +831,7 @@ export function AttachmentBatchReview({
         </div>
       )}
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button type="button" className={primaryButtonClass} disabled={!canFinish} onClick={() => void finish()}>
           {publishing ? "Finishing…" : "Finish"}
         </button>
@@ -794,6 +843,9 @@ export function AttachmentBatchReview({
         >
           Cancel batch
         </button>
+        {finishBlockerMessage && (
+          <p className="text-sm text-stone-500 dark:text-stone-400">{finishBlockerMessage}</p>
+        )}
       </div>
     </section>
   );

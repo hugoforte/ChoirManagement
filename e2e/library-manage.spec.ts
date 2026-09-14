@@ -56,7 +56,10 @@ test("director can review and publish a mixed attachment batch", async ({ page, 
   await expect(sourceRow.getByLabel(`Format for ${title}.mscz`)).toHaveValue("musescore");
   await expect(tenorRow.getByLabel(`Purpose for ${title} tenor.mp3`)).toHaveValue("partRehearsal");
   await expect(
-    tenorRow.getByRole("checkbox", { name: "Tenor", exact: true }),
+    tenorRow.getByRole("checkbox", {
+      name: `${title} tenor.mp3 Tenor`,
+      exact: true,
+    }),
   ).toBeChecked();
 
   await expect(page.getByText("Published attachments")).toHaveCount(0);

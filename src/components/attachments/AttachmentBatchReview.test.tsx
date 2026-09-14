@@ -308,6 +308,68 @@ describe("AttachmentBatchReview", () => {
     expect(clearCompleted).not.toHaveBeenCalled();
   });
 
+  it("explains that no files are included yet when the batch is empty", async () => {
+    renderReview();
+    await screen.findByRole("heading", { name: "Add attachments" });
+    expect(screen.getByText("No files included")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Finish" })).toBeDisabled();
+  });
+
+  it("explains why Finish is disabled while an upload is still in progress", async () => {
+    uploadFiles = [trackedUpload("upload-1", "Hallelujah score.pdf", "uploading")];
+    renderReview();
+    await screen.findByRole("heading", { name: "Add attachments" });
+    expect(screen.getByText("1 file still uploading")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Finish" })).toBeDisabled();
+  });
+
+  it("rejects empty or executable files before upload and shows a dismissible notice", async () => {
+    renderReview();
+    await screen.findByRole("heading", { name: "Add attachments" });
+
+    const virus = new File(["not empty"], "virus.exe", { type: "application/octet-stream" });
+    const empty = new File([], "empty.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("Choose attachment files"), {
+      target: { files: [virus, empty] },
+    });
+
+    expect(addFiles).not.toHaveBeenCalled();
+    expect(screen.getByText(/virus\.exe/)).toBeInTheDocument();
+    expect(screen.getByText(/empty\.pdf/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/virus\.exe/)).not.toBeInTheDocument();
+  });
+
+  it("still uploads the accepted files from a mixed valid/rejected selection", async () => {
+    renderReview();
+    await screen.findByRole("heading", { name: "Add attachments" });
+
+    const virus = new File(["not empty"], "virus.exe", { type: "application/octet-stream" });
+    const good = new File(["score"], "good.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("Choose attachment files"), {
+      target: { files: [virus, good] },
+    });
+
+    expect(addFiles).toHaveBeenCalledWith([good]);
+    expect(screen.getByText(/virus\.exe/)).toBeInTheDocument();
+  });
+
+  it("removes a cancelled row so it cannot be re-included", async () => {
+    uploadFiles = [trackedUpload("upload-1", "Hallelujah score.pdf")];
+    renderReview();
+    const reviewRow = await screen.findByTestId("review-row-upload-1");
+    expect(within(reviewRow).getByLabelText(/Include/)).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(within(reviewRow).getByRole("button", { name: "Cancel upload" }));
+    });
+
+    expect(cancel).toHaveBeenCalledWith("upload-1");
+    expect(screen.queryByTestId("review-row-upload-1")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Include/)).not.toBeInTheDocument();
+  });
+
   it("registers uploaded storage to the Piece and delegates safe cleanup", async () => {
     renderReview();
     await screen.findByRole("heading", { name: "Add attachments" });
