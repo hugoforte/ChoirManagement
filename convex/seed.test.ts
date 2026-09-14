@@ -96,6 +96,69 @@ test("default voice-part seeding preserves choir customization", async () => {
   expect(voiceParts.find((part) => part.name === "Baritone")).toBeDefined();
 });
 
+async function seedDirector(t: ReturnType<typeof convexTest>) {
+  return await t.mutation(internal.seed.upsertRoleMember, {
+    clerkUserId: "https://example.clerk.accounts.dev|user_director",
+    name: "E2E Director",
+    email: "e2e-director+clerk_test@example.com",
+    role: "director",
+  });
+}
+
+test("demoBulletin seeds one published Bulletin anchored to the demo rehearsal", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.seed.demo, {});
+  const directorId = await seedDirector(t);
+
+  await t.mutation(internal.seed.demoBulletin, {});
+
+  const bulletins = await t.run(async (ctx) => await ctx.db.query("bulletins").collect());
+  const rehearsal = await t.run(
+    async (ctx) =>
+      (await ctx.db.query("events").collect()).find((e) => e.title === "Tuesday Rehearsal") ?? null,
+  );
+  expect(bulletins).toHaveLength(1);
+  expect(bulletins[0]).toMatchObject({
+    status: "published",
+    createdByMemberId: directorId,
+    eventId: rehearsal?._id,
+  });
+  // A preview exists to show the reading view working, and the reading view
+  // renders Markdown — a body with none in it would prove nothing.
+  expect(bulletins[0].body).toContain("## What we covered");
+  expect(bulletins[0].publishedAt).toBeDefined();
+});
+
+test("demoBulletin is idempotent", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.seed.demo, {});
+  await seedDirector(t);
+
+  await t.mutation(internal.seed.demoBulletin, {});
+  await t.mutation(internal.seed.demoBulletin, {});
+
+  const bulletins = await t.run(async (ctx) => await ctx.db.query("bulletins").collect());
+  expect(bulletins).toHaveLength(1);
+});
+
+// Rather than attributing it to a fabricated author, or to a Chorister who
+// could not have written it — manageBulletins is director+.
+test("demoBulletin seeds nothing when the roster holds nobody who could author it", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.seed.demo, {});
+  await t.mutation(internal.seed.upsertRoleMember, {
+    clerkUserId: "https://example.clerk.accounts.dev|user_chorister",
+    name: "E2E Chorister",
+    email: "e2e-chorister+clerk_test@example.com",
+    role: "chorister",
+  });
+
+  await t.mutation(internal.seed.demoBulletin, {});
+
+  const bulletins = await t.run(async (ctx) => await ctx.db.query("bulletins").collect());
+  expect(bulletins).toHaveLength(0);
+});
+
 test("upsertRoleMember creates a Member at the requested Role", async () => {
   const t = convexTest(schema, modules);
   const clerkUserId = "https://example.clerk.accounts.dev|user_director";
