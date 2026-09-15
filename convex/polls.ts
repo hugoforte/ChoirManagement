@@ -7,7 +7,7 @@
 // alongside dates that nothing is scheduled on yet.
 import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { requireMember, requireCan } from "./lib/auth";
 import { normalizeOptionalText } from "./lib/text";
 import schema from "./schema";
@@ -291,6 +291,28 @@ const availabilityTally = v.object({
   notAnswered: v.number(),
 });
 
+// The grid's shape, named once: `getGrid` serves it for a Poll the viewer
+// opened, and `getForEvent` serves the same shape for the Poll behind an
+// Event (#87), so `AvailabilityGrid` renders either without a second prop
+// type.
+//
+// `values` and `tallies` are positional: index i of both lines up with
+// index i of `candidateDates`, so the client renders columns without
+// looking anything up by id.
+const pollGridFields = {
+  poll: schema.doc("polls"),
+  candidateDates: v.array(schema.doc("candidateDates")),
+  rows: v.array(
+    v.object({
+      memberId: v.id("members"),
+      name: v.string(),
+      isViewer: v.boolean(),
+      values: v.array(v.union(availabilityValue, v.null())),
+    }),
+  ),
+  tallies: v.array(availabilityTally),
+};
+
 // requireMember, not requireCan: responding is what every Member does, and
 // managePolls is what a Director needs to *author* the Poll (#9). The
 // Member is taken from the caller's identity, never from an argument.
@@ -338,71 +360,62 @@ export const setAvailability = mutation({
 // looking anything up by id.
 export const getGrid = query({
   args: { pollId: v.id("polls") },
-  returns: v.union(
-    v.null(),
-    v.object({
-      poll: schema.doc("polls"),
-      candidateDates: v.array(schema.doc("candidateDates")),
-      rows: v.array(
-        v.object({
-          memberId: v.id("members"),
-          name: v.string(),
-          isViewer: v.boolean(),
-          values: v.array(v.union(availabilityValue, v.null())),
-        }),
-      ),
-      tallies: v.array(availabilityTally),
-    }),
-  ),
+  returns: v.union(v.null(), v.object(pollGridFields)),
   handler: async (ctx, { pollId }) => {
     const viewer = await requireMember(ctx);
     const poll = await ctx.db.get("polls", pollId);
     if (!poll) return null;
-
-    const candidateDates = await candidateDatesInOrder(ctx, pollId);
-    // Members once and Availabilities once per Candidate Date, joined in
-    // memory: a lookup per Member per date would be Members × dates reads
-    // for the same rows. The roster is bounded the way members.list's is.
-    const [members, answersPerDate] = await Promise.all([
-      ctx.db.query("members").collect(),
-      Promise.all(
-        candidateDates.map((candidateDate) =>
-          ctx.db
-            .query("availabilities")
-            .withIndex("by_candidate_date_id", (q) => q.eq("candidateDateId", candidateDate._id))
-            .collect(),
-        ),
-      ),
-    ]);
-
-    const answersByDate = answersPerDate.map(
-      (answers) => new Map<Id<"members">, (typeof answers)[number]["value"]>(answers.map((a) => [a.memberId, a.value])),
-    );
-
-    const rows = members
-      .map((member) => ({
-        memberId: member._id,
-        name: member.name,
-        isViewer: member._id === viewer._id,
-        values: answersByDate.map((byMember) => byMember.get(member._id) ?? null),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    // Counted off the rows rather than the raw Availabilities, so an answer
-    // left behind by a deleted Member can't inflate a column.
-    const tallies = candidateDates.map((_, column) => {
-      const tally = { available: 0, unavailable: 0, if_needed: 0, notAnswered: 0 };
-      for (const row of rows) {
-        const value = row.values[column];
-        if (value === null) tally.notAnswered += 1;
-        else tally[value] += 1;
-      }
-      return tally;
-    });
-
-    return { poll, candidateDates, rows, tallies };
+    return await buildGrid(ctx, poll, viewer._id);
   },
 });
+
+// The grid-building half of getGrid, lifted out whole so getForEvent (#87)
+// serves an identical shape from a different starting point — an Event
+// rather than a Poll id — and the two can never drift.
+async function buildGrid(ctx: QueryCtx, poll: Doc<"polls">, viewerId: Id<"members">) {
+  const candidateDates = await candidateDatesInOrder(ctx, poll._id);
+  // Members once and Availabilities once per Candidate Date, joined in
+  // memory: a lookup per Member per date would be Members × dates reads
+  // for the same rows. The roster is bounded the way members.list's is.
+  const [members, answersPerDate] = await Promise.all([
+    ctx.db.query("members").collect(),
+    Promise.all(
+      candidateDates.map((candidateDate) =>
+        ctx.db
+          .query("availabilities")
+          .withIndex("by_candidate_date_id", (q) => q.eq("candidateDateId", candidateDate._id))
+          .collect(),
+      ),
+    ),
+  ]);
+
+  const answersByDate = answersPerDate.map(
+    (answers) => new Map<Id<"members">, (typeof answers)[number]["value"]>(answers.map((a) => [a.memberId, a.value])),
+  );
+
+  const rows = members
+    .map((member) => ({
+      memberId: member._id,
+      name: member.name,
+      isViewer: member._id === viewerId,
+      values: answersByDate.map((byMember) => byMember.get(member._id) ?? null),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Counted off the rows rather than the raw Availabilities, so an answer
+  // left behind by a deleted Member can't inflate a column.
+  const tallies = candidateDates.map((_, column) => {
+    const tally = { available: 0, unavailable: 0, if_needed: 0, notAnswered: 0 };
+    for (const row of rows) {
+      const value = row.values[column];
+      if (value === null) tally.notAnswered += 1;
+      else tally[value] += 1;
+    }
+    return tally;
+  });
+
+  return { poll, candidateDates, rows, tallies };
+}
 
 // The Member-facing list (#88): open Polls first, then closed ones as
 // history, each row carrying enough to decide whether to open it — how many
@@ -520,5 +533,89 @@ export const listForMember = query({
             : null,
       };
     });
+  },
+});
+
+// Closing a Poll, and promoting its winning Candidate Date into a real
+// Event (#87). The insert below is the single point at which Poll code
+// touches Events code (ADR-0005) — and it is deliberately an insert, not a
+// copy of anything else: Availabilities are never written into `rsvps`, so
+// a months-old hypothetical cannot silently become a commitment.
+//
+// Closing is always deliberate. A deadline passing never closes a Poll, and
+// nothing anywhere auto-closes one. There is no reopen: requireOpenPoll
+// already refuses every mutation on a closed Poll, `close` included.
+export const close = mutation({
+  args: {
+    pollId: v.id("polls"),
+    // Omitted means "no date worked": the Poll is preserved in history with
+    // that outcome and no Event is created.
+    winningCandidateDateId: v.optional(v.id("candidateDates")),
+  },
+  returns: v.union(v.id("events"), v.null()),
+  handler: async (ctx, { pollId, winningCandidateDateId }) => {
+    const member = await requireCan(ctx, "managePolls");
+    const poll = await requireOpenPoll(ctx, pollId);
+
+    if (winningCandidateDateId === undefined) {
+      await ctx.db.patch("polls", pollId, { status: "closed" });
+      await touchPoll(ctx, pollId, member._id);
+      return null;
+    }
+
+    const winner = await ctx.db.get("candidateDates", winningCandidateDateId);
+    // Belonging to *this* Poll, not merely existing: the id arrives from the
+    // client, and a Candidate Date from another Poll would otherwise date
+    // this Event from a poll nobody answered about it.
+    if (!winner || winner.pollId !== pollId) {
+      throw new Error("That Candidate Date does not belong to this Poll");
+    }
+
+    // An ordinary Event in every respect: a real startsAt, so it shows up in
+    // listUpcoming and the Events list, and the default private Visibility
+    // the Director can flip afterwards. The Candidate Date's `endsAt` has
+    // nowhere to go — an Event carries no end field — so a time window
+    // narrows to its start here.
+    const resultingEventId = await ctx.db.insert("events", {
+      title: poll.title,
+      description: poll.description,
+      startsAt: winner.startsAt,
+      location: poll.location,
+      youtubeUrl: undefined,
+      setlist: [],
+      visibility: "private",
+    });
+
+    await ctx.db.patch("polls", pollId, {
+      status: "closed",
+      winningCandidateDateId,
+      resultingEventId,
+    });
+    await touchPoll(ctx, pollId, member._id);
+    return resultingEventId;
+  },
+});
+
+// The reverse lookup behind an Event's "availability from the Poll" section
+// (#87): the Poll that produced this Event, with the same grid `getGrid`
+// serves, or null for an Event nobody polled about.
+//
+// requireMember for the same reason getGrid takes it: the grid is named
+// personal data about identifiable Members, so it is never reachable
+// without signing in, and never through convex/public.ts.
+//
+// `.unique()` states the invariant one Poll produces at most one Event
+// (ADR-0005) rather than quietly taking the first of several.
+export const getForEvent = query({
+  args: { eventId: v.id("events") },
+  returns: v.union(v.null(), v.object(pollGridFields)),
+  handler: async (ctx, { eventId }) => {
+    const viewer = await requireMember(ctx);
+    const poll = await ctx.db
+      .query("polls")
+      .withIndex("by_resulting_event_id", (q) => q.eq("resultingEventId", eventId))
+      .unique();
+    if (!poll) return null;
+    return await buildGrid(ctx, poll, viewer._id);
   },
 });
