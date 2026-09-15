@@ -19,7 +19,7 @@
 // A deployment with no mail provider configured is a supported state, not an
 // error: publish still succeeds, nothing is queued, and the UI says so.
 import { v } from "convex/values";
-import { Resend, vOnEmailEventArgs, type EmailEvent } from "@convex-dev/resend";
+import { Resend, vOnEmailEventArgs, type EmailEvent, type EmailId } from "@convex-dev/resend";
 
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -43,13 +43,27 @@ import schema from "./schema";
 const sendStatus = schema.tables.bulletinEmailSends.validator.fields.status;
 
 // Roster-sized reads. A choir is not an unbounded user base, but `.collect()`
-// on a table nobody bounds is how a query stops scaling quietly, so both
-// reads here take a ceiling.
+// on a table nobody bounds is how a query stops scaling quietly, so every
+// read here takes a ceiling.
+//
+// Hitting it would silently email only the first 500 Members, so it never
+// passes unremarked: the queue logs it, and the Director's delivery summary
+// carries a `truncated` flag that the panel turns into a warning. A choir
+// that large needs batching this slice does not have.
 const ROSTER_LIMIT = 500;
 
 const NOT_CONFIGURED = "Email is not configured for this deployment";
 const NO_ADDRESS = "No email address on file for this Member";
 
+// A note on configuration, since `convex/_generated/ai/guidelines.md` prefers
+// typed app env vars declared in `convex.config.ts` over `process.env`: two of
+// this feature's four variables are not ours to move. The Resend component's
+// own constructor reads `RESEND_API_KEY` and `RESEND_WEBHOOK_SECRET` from
+// `process.env` itself. Declaring only the other two on `defineApp({ env })`
+// would split one feature's configuration across two mechanisms and leave
+// `readEmailConfig` unable to validate the set as a unit, which is the whole
+// point of it returning null-or-complete. One idiom for all four wins.
+//
 // Built per call rather than once at module scope. The constructor snapshots
 // `process.env.RESEND_API_KEY` / `RESEND_WEBHOOK_SECRET` at the moment it
 // runs, so a module-level instance would bake in whatever the environment
@@ -76,8 +90,32 @@ export function resendWebhookSecret(): string {
 
 // Wrapped rather than exposing the client, so convex/http.ts doesn't have to
 // know how the component is constructed.
+//
+// The component verifies the Svix signature and *throws* when it fails, which
+// would surface as a 500 — telling every scanner that pokes this public URL
+// that it broke something, and telling Resend to retry a request that can
+// never succeed. A failed signature is a refusal, so it answers 401.
+//
+// Only that one error is translated. Anything else — the component's own
+// mutation failing, say — is a genuine server fault and must stay a 5xx, so
+// that Resend retries it and it shows up in the deployment's logs.
 export async function handleResendWebhook(ctx: ActionCtx, request: Request): Promise<Response> {
-  return await resendClient().handleResendEventWebhook(ctx, request);
+  try {
+    return await resendClient().handleResendEventWebhook(ctx, request);
+  } catch (error) {
+    if (isSignatureFailure(error)) {
+      return new Response("Invalid signature", { status: 401 });
+    }
+    throw error;
+  }
+}
+
+// Matched by name rather than `instanceof`: the class is svix's
+// `WebhookVerificationError`, reached only as a transitive dependency of the
+// component, and importing it here would tie this app to a package the
+// component is free to swap.
+function isSignatureFailure(error: unknown): boolean {
+  return error instanceof Error && error.name === "WebhookVerificationError";
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +132,11 @@ export async function queueBulletinEmails(
   if (readEmailConfig(process.env) === null) return 0;
 
   const roster = await ctx.db.query("members").take(ROSTER_LIMIT);
+  if (roster.length === ROSTER_LIMIT) {
+    console.warn(
+      `Bulletin email: roster read hit the ${ROSTER_LIMIT}-Member ceiling, so some Members may not have been queued.`,
+    );
+  }
   // Absent means opted in — see the schema comment. Only an explicit false
   // is an opt-out, so Members who predate the toggle still get the email.
   const recipients = roster.filter((member) => member.emailBulletins !== false);
@@ -287,6 +330,19 @@ export async function sendQueuedBulletinEmails(
       });
     }
   }
+
+  // `sendEmail` only enqueued these; the actual POST to Resend happens later
+  // inside the component's workpool, and a permanent rejection there (a bad
+  // key, an unverified sender domain) never reaches `handleEmailEvent` —
+  // that callback fires for *webhook* events only. Without this pass a row
+  // would sit at "handed to the provider" forever while Resend had refused
+  // it, which is precisely the first failure a new deployment hits.
+  if (batch.recipients.length > 0) {
+    await ctx.scheduler.runAfter(RECONCILE_DELAYS_MS[0], internal.bulletinEmails.reconcile, {
+      bulletinId,
+      attempt: 0,
+    });
+  }
   return null;
 }
 
@@ -295,6 +351,139 @@ export const sendQueued = internalAction({
   returns: v.null(),
   handler: async (ctx, { bulletinId }) =>
     await sendQueuedBulletinEmails(ctx, bulletinId, sendThroughResend),
+});
+
+// ---------------------------------------------------------------------------
+// Reconciliation: what the provider itself says became of each email
+//
+// The webhook (below) is the fast path and carries the richer information,
+// but it only exists once the owner has registered it, and it never fires for
+// an email Resend refused outright. This pass asks the component directly.
+//
+// Twice, then stop: once a minute after sending, to catch an outright
+// rejection while the Director is still looking at the page, and once a
+// quarter-hour later for a batch that was merely slow. Anything still
+// unsettled after that is a delivery nobody has heard about either way, and
+// the webhook remains free to settle it whenever it arrives.
+const RECONCILE_DELAYS_MS = [60_000, 15 * 60_000];
+
+// The second seam, alongside the sender: reading a provider's verdict is the
+// other thing a test cannot do for real.
+export type BulletinEmailStatusReader = (
+  ctx: ActionCtx,
+  providerMessageId: string,
+) => Promise<{ status: string; errorMessage: string | null } | null>;
+
+const readStatusFromResend: BulletinEmailStatusReader = async (ctx, providerMessageId) => {
+  const status = await resendClient().status(ctx, providerMessageId as EmailId);
+  return status ? { status: status.status, errorMessage: status.errorMessage } : null;
+};
+
+const unsettledRow = v.object({
+  sendId: v.id("bulletinEmailSends"),
+  providerMessageId: v.string(),
+  status: sendStatus,
+});
+
+export const unsettledForBulletin = internalQuery({
+  args: { bulletinId: v.id("bulletins") },
+  returns: v.array(unsettledRow),
+  handler: async (ctx, { bulletinId }) => {
+    const rows = await ctx.db
+      .query("bulletinEmailSends")
+      .withIndex("by_bulletin_id", (q) => q.eq("bulletinId", bulletinId))
+      .take(ROSTER_LIMIT);
+
+    // A row with no provider id never reached Resend, so Resend has nothing
+    // to say about it — it is already `failed` for a reason of our own.
+    return rows.flatMap((row) =>
+      (row.status === "queued" || row.status === "sent") && row.providerMessageId
+        ? [{ sendId: row._id, providerMessageId: row.providerMessageId, status: row.status }]
+        : [],
+    );
+  },
+});
+
+export const applyProviderStatus = internalMutation({
+  args: { sendId: v.id("bulletinEmailSends"), status: sendStatus, error: v.union(v.string(), v.null()) },
+  returns: v.null(),
+  handler: async (ctx, { sendId, status, error }) => {
+    const row = await ctx.db.get("bulletinEmailSends", sendId);
+    if (!row || !advances(row.status, status)) return null;
+    await ctx.db.patch("bulletinEmailSends", sendId, {
+      status,
+      ...(error !== null && { error }),
+      updatedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
+// The component's vocabulary is wider than this table's. `waiting`/`queued`
+// mean it has not been handed over yet and `delivery_delayed` means it is
+// still trying — all three are "ask again later", not an outcome.
+function statusFromProvider(
+  providerStatus: string,
+  errorMessage: string | null,
+): { status: SendStatus; error: string | null } | null {
+  switch (providerStatus) {
+    case "sent":
+      return { status: "sent", error: null };
+    case "delivered":
+      return { status: "delivered", error: null };
+    case "bounced":
+      return { status: "bounced", error: errorMessage ?? "Bounced" };
+    case "failed":
+      return { status: "failed", error: errorMessage ?? "The mail provider rejected this email" };
+    case "cancelled":
+      return { status: "failed", error: errorMessage ?? "Cancelled before it was sent" };
+    default:
+      return null;
+  }
+}
+
+export async function reconcileBulletinEmails(
+  ctx: ActionCtx,
+  bulletinId: Id<"bulletins">,
+  attempt: number,
+  readStatus: BulletinEmailStatusReader,
+): Promise<null> {
+  const rows = await ctx.runQuery(internal.bulletinEmails.unsettledForBulletin, { bulletinId });
+  if (rows.length === 0) return null;
+
+  let stillUnsettled = 0;
+  for (const row of rows) {
+    // A null reading means the component no longer holds that email — it
+    // prunes finalized rows on a schedule. Leaving ours as it stands beats
+    // inventing an outcome.
+    const reading = await readStatus(ctx, row.providerMessageId).catch(() => null);
+    const update = reading && statusFromProvider(reading.status, reading.errorMessage);
+    if (!update || update.status === "sent") {
+      stillUnsettled += 1;
+      continue;
+    }
+    await ctx.runMutation(internal.bulletinEmails.applyProviderStatus, {
+      sendId: row.sendId,
+      status: update.status,
+      error: update.error,
+    });
+  }
+
+  const next = attempt + 1;
+  if (stillUnsettled > 0 && next < RECONCILE_DELAYS_MS.length) {
+    await ctx.scheduler.runAfter(RECONCILE_DELAYS_MS[next], internal.bulletinEmails.reconcile, {
+      bulletinId,
+      attempt: next,
+    });
+  }
+  return null;
+}
+
+export const reconcile = internalAction({
+  args: { bulletinId: v.id("bulletins"), attempt: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { bulletinId, attempt }) =>
+    await reconcileBulletinEmails(ctx, bulletinId, attempt, readStatusFromResend),
 });
 
 // ---------------------------------------------------------------------------
@@ -316,10 +505,7 @@ export const handleEmailEvent = internalMutation({
 
     const update = statusFromEvent(event);
     if (!update) return null;
-    // `email.sent` can arrive after `email.delivered` — the events are not
-    // ordered — and re-stamping a delivered row as merely sent would lose
-    // the outcome. Nothing ever moves back out of a terminal status.
-    if (update.status === "sent" && row.status !== "queued") return null;
+    if (!advances(row.status, update.status)) return null;
 
     await ctx.db.patch("bulletinEmailSends", row._id, { ...update, updatedAt: Date.now() });
     return null;
@@ -327,6 +513,26 @@ export const handleEmailEvent = internalMutation({
 });
 
 type SendStatus = Doc<"bulletinEmailSends">["status"];
+
+// Webhook events are not ordered: `email.sent` can land after
+// `email.delivered`, and re-stamping a delivered row as merely sent would
+// lose the outcome. Rank them and only ever move forward.
+//
+// The three settled states share a rank on purpose — a delivered address can
+// still bounce afterwards, and a reconciliation pass may learn that mail the
+// provider accepted was later rejected. Those are real transitions and are
+// allowed; only going *back* toward queued is not.
+const STATUS_RANK: Record<SendStatus, number> = {
+  queued: 0,
+  sent: 1,
+  delivered: 2,
+  bounced: 2,
+  failed: 2,
+};
+
+function advances(from: SendStatus, to: SendStatus): boolean {
+  return STATUS_RANK[to] >= STATUS_RANK[from] && to !== from;
+}
 
 // Only the four outcomes this table models. Opens, clicks, spam complaints
 // and delivery delays are real Resend events and are deliberately ignored:
@@ -373,6 +579,9 @@ const deliverySummary = v.object({
   delivered: v.number(),
   bounced: v.number(),
   failed: v.number(),
+  // True when this Bulletin has at least ROSTER_LIMIT delivery rows, so the
+  // counts below may be a partial view rather than the whole send.
+  truncated: v.boolean(),
   // Named, because "3 failed" without the names is not something a Director
   // can act on. Bounces and failures only — a queued row isn't a problem yet.
   problems: v.array(
@@ -409,6 +618,6 @@ export const summaryForBulletin = query({
         })),
     );
 
-    return { ...counts, problems };
+    return { ...counts, truncated: rows.length === ROSTER_LIMIT, problems };
   },
 });

@@ -176,7 +176,15 @@ Sending goes through the [`@convex-dev/resend`](https://github.com/get-convex/re
 4. Add them at your registrar, then click Verify in Resend. Propagation is usually minutes but can take longer.
 5. Create an **API key** in Resend (Settings → API Keys) with send permission, and copy it. You only get to see it once.
 
-Until the domain shows as verified, sends will fail — and they will fail *visibly*, as `failed` rows on the Bulletin's "Email delivery" panel with Resend's own error text, rather than silently.
+Until the domain shows as verified, sends will fail. They fail *visibly*, but not instantly, and it is worth knowing the sequence so the panel does not mislead you:
+
+1. Publishing hands each email to the Resend component's queue. The Bulletin's "Email delivery" panel immediately shows those as **Handed to provider** — which means accepted for delivery, **not** that anyone received anything.
+2. The component makes the actual API call shortly afterwards. If Resend refuses it (unverified domain, bad key, malformed From address), it records the rejection.
+3. A reconciliation pass runs about **a minute after publishing**, and again about **fifteen minutes later**, asking the component what became of each email. A refusal turns the row into **Failed** with Resend's own error text.
+
+So: a row sitting at "Handed to provider" a minute after you published is fine; one still there after a quarter of an hour, with no Delivered count moving, means something is wrong — check the Resend dashboard. Nothing is silently dropped either way.
+
+Registering the webhook (Step 8c) makes this much faster and adds real delivery/bounce reporting; the reconciliation pass is the floor, not the ceiling.
 
 ### 8b. Set the Convex environment variables
 

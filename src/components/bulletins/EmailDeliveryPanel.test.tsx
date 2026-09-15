@@ -17,10 +17,19 @@ type Summary = {
   delivered: number;
   bounced: number;
   failed: number;
+  truncated: boolean;
   problems: { memberName: string; status: "bounced" | "failed"; error: string | null }[];
 };
 
-const NONE: Summary = { queued: 0, sent: 0, delivered: 0, bounced: 0, failed: 0, problems: [] };
+const NONE: Summary = {
+  queued: 0,
+  sent: 0,
+  delivered: 0,
+  bounced: 0,
+  failed: 0,
+  truncated: false,
+  problems: [],
+};
 
 function renderPanel(summary: Summary | undefined) {
   vi.mocked(useQuery).mockImplementation(((query: Parameters<typeof getFunctionName>[0]) => {
@@ -73,6 +82,20 @@ test("a failure with no provider text still names the Member", () => {
   });
 
   expect(screen.getByText("Dana Director — failed")).toBeVisible();
+});
+
+// "Sent" would read as "it arrived"; the provider has only accepted it.
+test("an accepted-but-unconfirmed email is not called sent", () => {
+  renderPanel({ ...NONE, sent: 3 });
+
+  expect(screen.getByText("Handed to provider")).toBeVisible();
+  expect(screen.queryByText("Sent")).toBeNull();
+});
+
+test("a truncated summary says the counts are partial", () => {
+  renderPanel({ ...NONE, delivered: 500, truncated: true });
+
+  expect(screen.getByText(/counts below are a partial view/)).toBeVisible();
 });
 
 test("the panel shows a loading state before the summary arrives", () => {

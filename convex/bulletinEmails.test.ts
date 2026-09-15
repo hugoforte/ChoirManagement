@@ -16,7 +16,14 @@ import schema from "./schema";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
-import { sendQueuedBulletinEmails, type BulletinEmailSender } from "./bulletinEmails";
+import {
+  handleResendWebhook,
+  reconcileBulletinEmails,
+  resendWebhookSecret,
+  sendQueuedBulletinEmails,
+  type BulletinEmailSender,
+  type BulletinEmailStatusReader,
+} from "./bulletinEmails";
 import type { EmailId } from "@convex-dev/resend";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -529,4 +536,191 @@ test("deleting a Bulletin takes its delivery rows with it", async () => {
   // Deleting a published Bulletin is admin-only (#49).
   await t.withIdentity(adminIdentity).mutation(api.bulletins.remove, { bulletinId });
   expect(await sendRows(t, bulletinId)).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------
+// Reconciliation
+//
+// The gap this closes: `sendEmail` only enqueues into the component's
+// workpool. The POST to Resend happens later, and a permanent rejection there
+// — a bad key, an unverified sender domain — marks the component's own record
+// failed without ever calling `onEmailEvent`, which fires for webhook events
+// only. Left alone, our row would read "handed to provider" forever for mail
+// Resend refused. This is the first failure a new deployment hits.
+
+function statusReader(
+  readings: Record<string, { status: string; errorMessage: string | null } | null>,
+): BulletinEmailStatusReader {
+  return async (_ctx, providerMessageId) => readings[providerMessageId] ?? null;
+}
+
+async function reconcileOnce(
+  t: Test,
+  bulletinId: Id<"bulletins">,
+  readStatus: BulletinEmailStatusReader,
+) {
+  await t.run(async (ctx) =>
+    reconcileBulletinEmails(asSendCtx(ctx), bulletinId, 0, readStatus),
+  );
+}
+
+test("a permanent provider rejection ends as failed with the provider's reason", async () => {
+  configureEmail();
+  const t = convexTest(schema, modules);
+  const { choristerId } = await seedMembers(t);
+  await optOut(t, choristerId);
+
+  // The send itself succeeded: the email was accepted into the queue.
+  const bulletinId = await publishAndSend(t, senderReturning("email_abc"));
+  expect((await sendRows(t, bulletinId))[0].status).toBe("sent");
+
+  await reconcileOnce(
+    t,
+    bulletinId,
+    statusReader({
+      email_abc: { status: "failed", errorMessage: "The example.org domain is not verified" },
+    }),
+  );
+
+  const row = (await sendRows(t, bulletinId))[0];
+  expect(row.status).toBe("failed");
+  expect(row.error).toBe("The example.org domain is not verified");
+});
+
+test("a bounce discovered by reconciliation is recorded even with no webhook", async () => {
+  configureEmail();
+  const t = convexTest(schema, modules);
+  const { choristerId } = await seedMembers(t);
+  await optOut(t, choristerId);
+  const bulletinId = await publishAndSend(t, senderReturning("email_abc"));
+
+  await reconcileOnce(
+    t,
+    bulletinId,
+    statusReader({ email_abc: { status: "bounced", errorMessage: "Mailbox does not exist" } }),
+  );
+
+  const row = (await sendRows(t, bulletinId))[0];
+  expect(row.status).toBe("bounced");
+  expect(row.error).toBe("Mailbox does not exist");
+});
+
+test("reconciliation advances a confirmed delivery", async () => {
+  configureEmail();
+  const t = convexTest(schema, modules);
+  const { choristerId } = await seedMembers(t);
+  await optOut(t, choristerId);
+  const bulletinId = await publishAndSend(t, senderReturning("email_abc"));
+
+  await reconcileOnce(
+    t,
+    bulletinId,
+    statusReader({ email_abc: { status: "delivered", errorMessage: null } }),
+  );
+
+  expect((await sendRows(t, bulletinId))[0].status).toBe("delivered");
+});
+
+test("reconciliation leaves a row alone while the provider is still working", async () => {
+  configureEmail();
+  const t = convexTest(schema, modules);
+  const { choristerId } = await seedMembers(t);
+  await optOut(t, choristerId);
+  const bulletinId = await publishAndSend(t, senderReturning("email_abc"));
+
+  await reconcileOnce(
+    t,
+    bulletinId,
+    statusReader({ email_abc: { status: "delivery_delayed", errorMessage: null } }),
+  );
+
+  expect((await sendRows(t, bulletinId))[0].status).toBe("sent");
+});
+
+// The component prunes finalized emails on a schedule, so a late pass can
+// find nothing. Inventing an outcome would be worse than leaving it.
+test("reconciliation leaves a row alone when the provider has no record of it", async () => {
+  configureEmail();
+  const t = convexTest(schema, modules);
+  const { choristerId } = await seedMembers(t);
+  await optOut(t, choristerId);
+  const bulletinId = await publishAndSend(t, senderReturning("email_abc"));
+
+  await reconcileOnce(t, bulletinId, statusReader({}));
+
+  expect((await sendRows(t, bulletinId))[0].status).toBe("sent");
+});
+
+test("reconciliation never walks a settled row backwards", async () => {
+  configureEmail();
+  const t = convexTest(schema, modules);
+  const { choristerId } = await seedMembers(t);
+  await optOut(t, choristerId);
+  const bulletinId = await publishSendAndEvent(t, {
+    type: "email.delivered",
+    created_at: webhookCommon.created_at,
+    data: webhookCommon,
+  });
+
+  // A stale reading that still says "sent" must not undo the delivery.
+  await reconcileOnce(
+    t,
+    bulletinId,
+    statusReader({ email_abc: { status: "sent", errorMessage: null } }),
+  );
+
+  expect((await sendRows(t, bulletinId))[0].status).toBe("delivered");
+});
+
+test("a row that never reached the provider is not reconciled against it", async () => {
+  configureEmail();
+  const t = convexTest(schema, modules);
+  const { choristerId } = await seedMembers(t);
+  await optOut(t, choristerId);
+  const bulletinId = await publishAndSend(t, senderThrowing("Connection refused"));
+
+  // No providerMessageId, so there is nothing to ask about; the local error
+  // stands rather than being overwritten.
+  await reconcileOnce(
+    t,
+    bulletinId,
+    statusReader({ email_abc: { status: "delivered", errorMessage: null } }),
+  );
+
+  const row = (await sendRows(t, bulletinId))[0];
+  expect(row.status).toBe("failed");
+  expect(row.error).toBe("Connection refused");
+});
+
+// ---------------------------------------------------------------------------
+// The webhook endpoint's own responses
+
+test("resendWebhookSecret reports an unconfigured deployment", () => {
+  expect(resendWebhookSecret()).toBe("");
+  vi.stubEnv("RESEND_WEBHOOK_SECRET", "whsec_test");
+  expect(resendWebhookSecret()).toBe("whsec_test");
+});
+
+// A public URL gets poked. An unsigned POST is a refusal, not a server fault:
+// a 500 would tell Resend to keep retrying something that can never succeed.
+test("an unsigned webhook request is refused with 401, not a 500", async () => {
+  configureEmail();
+  vi.stubEnv("RESEND_WEBHOOK_SECRET", "whsec_dGVzdHNlY3JldHRlc3RzZWNyZXR0ZXN0");
+  const t = convexTest(schema, modules);
+
+  // `t.run` serialises what its callback returns, and a Response is not a
+  // Convex value — read it inside and hand back plain fields.
+  const { status, body } = await t.run(async (ctx) => {
+    const response = await handleResendWebhook(
+      asSendCtx(ctx),
+      new Request("https://example.convex.site/resend-webhook", {
+        method: "POST",
+        body: JSON.stringify({ type: "email.delivered" }),
+      }),
+    );
+    return { status: response.status, body: await response.text() };
+  });
+
+  expect(status).toBe(401);
+  expect(body).toBe("Invalid signature");
 });

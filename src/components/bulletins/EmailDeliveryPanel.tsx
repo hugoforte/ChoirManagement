@@ -17,9 +17,14 @@ const mutedText = "text-xs text-stone-500 dark:text-stone-400";
 // Ordered as an email's life runs, not alphabetically, so the row reads as
 // progress. `queued` leads because a row sitting there is the one state that
 // means "not finished yet".
+//
+// `sent` is labelled "Handed to provider" rather than "Sent" on purpose: it
+// means Resend accepted the email for delivery, not that it arrived, and not
+// even that Resend has tried yet. Calling it "Sent" invited exactly the
+// wrong conclusion while a sender domain was still being verified.
 const COUNT_LABELS = [
   ["queued", "Queued"],
-  ["sent", "Sent"],
+  ["sent", "Handed to provider"],
   ["delivered", "Delivered"],
   ["bounced", "Bounced"],
   ["failed", "Failed"],
@@ -53,6 +58,13 @@ export function EmailDeliveryPanel({ bulletinId }: { bulletinId: Id<"bulletins">
               </div>
             ))}
           </dl>
+
+          {summary.truncated && (
+            <p className={mutedText}>
+              This Bulletin has more delivery rows than this summary reads. The counts below are a
+              partial view.
+            </p>
+          )}
 
           {summary.problems.length > 0 && (
             <ul className="space-y-1 text-sm">

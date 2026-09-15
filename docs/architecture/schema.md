@@ -56,6 +56,10 @@ Convex doesn't enforce unique indexes. "One RSVP per Member per Event" is a writ
 
 `by_provider_message_id` resolves a webhook event back to its row. The field is optional — a queued row has no provider id yet — so every unsent row indexes under `undefined`, and the lookup must take a real string id. Same trap as `bulletins.by_share_link_token`.
 
+`sent` means the mail provider accepted the email, not that it arrived — the panel labels it "Handed to provider" for that reason. Two things can settle it: Resend's webhook, and a reconciliation pass that runs a minute and then a quarter-hour after publishing. The pass exists because the component's queue makes the real API call *after* the enqueue returns, and a permanent rejection there never reaches the webhook callback — without it, a row would read as accepted forever for mail Resend had refused.
+
+Statuses are ranked and only ever move forward (`queued` < `sent` < the three settled states), because webhook events are not ordered. The settled states share a rank so that a delivered address can still later be recorded as bounced.
+
 The rows are owned by their Bulletin and are deleted with it, like Remarks: a delivery summary for a Bulletin that no longer exists has nothing to say.
 
 ### `members.emailBulletins` is absent-means-opted-in
