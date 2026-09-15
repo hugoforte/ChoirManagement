@@ -95,7 +95,9 @@ test("director closes a Poll on a winning date and the Event appears on the Even
   await page.goto("/polls");
   await page.getByRole("link", { name: title }).click();
   await page.waitForURL(/\/polls\/(?!manage).+/);
-  const available = page.getByRole("button", { name: `Available on ${winningDate}` });
+  // exact, because "Available on <date>" is a substring of the
+  // "Unavailable on <date>" control sitting beside it.
+  const available = page.getByRole("button", { name: `Available on ${winningDate}`, exact: true });
   await available.click();
   await expect(available).toHaveAttribute("aria-pressed", "true");
 
