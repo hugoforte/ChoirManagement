@@ -724,3 +724,11 @@ test("an unsigned webhook request is refused with 401, not a 500", async () => {
   expect(status).toBe(401);
   expect(body).toBe("Invalid signature");
 });
+
+test("webhookEndpoint derives the address Resend must post to from the deployment's site URL", async () => {
+  vi.stubEnv("CONVEX_SITE_URL", "https://example.convex.site/");
+  const t = convexTest(schema, modules);
+  expect(await t.query(internal.bulletinEmails.webhookEndpoint, {})).toBe(
+    "https://example.convex.site/resend-webhook",
+  );
+});

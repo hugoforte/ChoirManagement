@@ -16,7 +16,8 @@
     "lint": "npm run codegen && npm run check",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "setup:email": "bash scripts/setup/bulletin-email.sh"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.31.0",

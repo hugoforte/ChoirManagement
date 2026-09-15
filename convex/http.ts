@@ -9,11 +9,12 @@ import { httpRouter } from "convex/server";
 
 import { httpAction } from "./_generated/server";
 import { handleResendWebhook, resendWebhookSecret } from "./bulletinEmails";
+import { RESEND_WEBHOOK_PATH } from "./lib/bulletinEmail";
 
 const http = httpRouter();
 
 http.route({
-  path: "/resend-webhook",
+  path: RESEND_WEBHOOK_PATH,
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     // A deployment with no mail provider has no webhook secret either, and

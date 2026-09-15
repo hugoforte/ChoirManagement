@@ -170,6 +170,20 @@ When a Director publishes a Bulletin, the app can email it to every Member. This
 - The Convex dashboard open at your production deployment ([dashboard.convex.dev](https://dashboard.convex.dev)).
 - A free [Resend](https://resend.com) account. Resend is the service that actually delivers the mail.
 
+### The fast way: run the setup wizard
+
+A script does everything below except the two things only you can do: create one Resend key, and paste DNS records at your registrar. Run it from the repo folder after the app has been deployed once:
+
+```
+npm run setup:email
+```
+
+It asks for your app's address, opens Resend for the key, registers your domain, prints the DNS records to add, waits while you add them, creates a send-only key for the app, registers the delivery webhook, and writes all four values into your production Convex deployment. It remembers where it got to, so if DNS takes a while you can stop and re-run later.
+
+If you would rather do it by hand, or want to know what the script did, the rest of this step is the same procedure click by click.
+
+### The manual way
+
 Four values move from Resend and your domain into Convex. Collect them as you go:
 
 | Value | You get it from | Looks like |

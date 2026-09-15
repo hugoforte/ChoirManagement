@@ -15,6 +15,11 @@ export const RESEND_API_KEY = "RESEND_API_KEY";
 export const BULLETINS_FROM_EMAIL = "BULLETINS_FROM_EMAIL";
 export const APP_BASE_URL = "APP_BASE_URL";
 
+// The HTTP action path Resend posts delivery events to. One constant so the
+// router (convex/http.ts) and the setup wizard's lookup (bulletinEmails.webhookEndpoint)
+// cannot drift apart.
+export const RESEND_WEBHOOK_PATH = "/resend-webhook";
+
 export type EmailEnv = Record<string, string | undefined>;
 
 export type BulletinEmailConfig = {

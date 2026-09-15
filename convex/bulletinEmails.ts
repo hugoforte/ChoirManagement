@@ -37,6 +37,7 @@ import {
   readEmailConfig,
   renderBulletinEmail,
   type BulletinEmailConfig,
+  RESEND_WEBHOOK_PATH,
 } from "./lib/bulletinEmail";
 import schema from "./schema";
 
@@ -619,5 +620,20 @@ export const summaryForBulletin = query({
     );
 
     return { ...counts, truncated: rows.length === ROSTER_LIMIT, problems };
+  },
+});
+
+// The address Resend must deliver webhook events to, derived from the
+// deployment itself so setup never asks a human to copy it out of a
+// dashboard: `npx convex run bulletinEmails:webhookEndpoint --prod` is what
+// scripts/setup/bulletin-email.sh calls. CONVEX_SITE_URL is the `.convex.site`
+// host every deployment exposes for HTTP actions.
+export const webhookEndpoint = internalQuery({
+  args: {},
+  returns: v.string(),
+  handler: async () => {
+    const site = process.env.CONVEX_SITE_URL;
+    if (!site) throw new Error("CONVEX_SITE_URL is not set on this deployment");
+    return `${site.replace(/\/+$/, "")}${RESEND_WEBHOOK_PATH}`;
   },
 });
