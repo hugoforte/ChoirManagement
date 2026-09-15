@@ -47,9 +47,9 @@ async function touchPoll(ctx: MutationCtx, pollId: Id<"polls">, memberId: Id<"me
   await ctx.db.patch("polls", pollId, { updatedAt: Date.now(), updatedByMemberId: memberId });
 }
 
-// The open half of both list surfaces: `list` (manager-gated, with the
-// closed history after it) and `listOpen` (every Member). One definition so
-// the two can't drift on ordering or bound.
+// The open half of `list`, the manager-gated surface that carries the
+// closed history after it. `listForMember` reads the same index on its own
+// lower bound (see MEMBER_POLL_LIMIT).
 async function openPollsNewestFirst(ctx: QueryCtx | MutationCtx) {
   return await ctx.db
     .query("polls")
@@ -58,14 +58,20 @@ async function openPollsNewestFirst(ctx: QueryCtx | MutationCtx) {
     .take(200);
 }
 
+// Far above any plausible Poll — a Director proposing more than 50 dates is
+// not a case this feature has — but a real cap rather than a comment about
+// one, because listForMember calls this once per Poll in its list: 50
+// unbounded reads is a different thing from 50 bounded ones. Both sides of
+// reorderCandidateDates' permutation check read through here, so they stay
+// consistent with each other at any size.
+const CANDIDATE_DATE_LIMIT = 50;
+
 async function candidateDatesInOrder(ctx: QueryCtx | MutationCtx, pollId: Id<"polls">) {
-  // Bounded by one Poll's own authoring — a handful of dates, the same
-  // shape as events.roster collecting one Event's RSVPs.
   return await ctx.db
     .query("candidateDates")
     .withIndex("by_poll_id_and_display_order", (q) => q.eq("pollId", pollId))
     .order("asc")
-    .collect();
+    .take(CANDIDATE_DATE_LIMIT);
 }
 
 export const create = mutation({
@@ -398,14 +404,121 @@ export const getGrid = query({
   },
 });
 
-// The Member-facing half of `list`: open Polls only, newest first, for the
-// /polls page's way into each grid. #88 owns the full list with its closed
-// history.
-export const listOpen = query({
+// The Member-facing list (#88): open Polls first, then closed ones as
+// history, each row carrying enough to decide whether to open it — how many
+// dates it asks about, where the viewer stands on answering them, and for a
+// closed Poll what it settled on. Replaces #85's `listOpen`, which this
+// absorbs.
+//
+// requireMember, not requireCan: every signed-in Member sees every Poll
+// (#9). `list` above is the manager's twin and stays behind managePolls.
+
+// The newest 50 of each half. A Member scans this list to find the Poll they
+// owe an answer to and to see what past Polls settled on — it is not an
+// archive browser, and #88 deliberately ships no search, filter or paging
+// over history. Lower than `list`'s 200 because every row here also reads
+// its Poll's Candidate Dates.
+const MEMBER_POLL_LIMIT = 50;
+
+// One row per Candidate Date the viewer has ever answered, across every
+// Poll. Read newest first, which is what makes the bound safe: truncation
+// drops a Member's oldest answers, and those belong to Polls already past
+// this list's own 50-per-section cut. Read oldest first it would do the
+// opposite — keep answers to Polls nobody can see and report the Polls on
+// screen as unanswered.
+const VIEWER_ANSWER_LIMIT = 1000;
+
+const pollResponseState = v.union(
+  v.literal("not_started"),
+  v.literal("partial"),
+  v.literal("complete"),
+);
+
+// A Member with no Candidate Dates left to answer has "complete"; one who
+// has answered none has "not_started". A Poll carrying no Candidate Dates at
+// all reads as "not_started" rather than "complete" — calling it complete
+// would credit the Member with an answer they never gave.
+function viewerResponseState(candidateDateCount: number, answeredCount: number) {
+  if (answeredCount === 0) return "not_started" as const;
+  return answeredCount === candidateDateCount ? ("complete" as const) : ("partial" as const);
+}
+
+function newestFirstForMember(ctx: QueryCtx, status: "open" | "closed") {
+  return ctx.db
+    .query("polls")
+    .withIndex("by_status", (q) => q.eq("status", status))
+    .order("desc")
+    .take(MEMBER_POLL_LIMIT);
+}
+
+const memberPollListItem = v.object({
+  _id: v.id("polls"),
+  _creationTime: v.number(),
+  title: v.string(),
+  status: schema.tables.polls.validator.fields.status,
+  deadlineAt: v.optional(v.number()),
+  candidateDateCount: v.number(),
+  responseState: pollResponseState,
+  // null on an open Poll: an outcome is what closing produces (#87). A
+  // closed Poll that settled on no date carries the object with both dates
+  // null, which is a different thing from having no outcome yet.
+  outcome: v.union(
+    v.null(),
+    v.object({
+      winningStartsAt: v.union(v.number(), v.null()),
+      winningEndsAt: v.union(v.number(), v.null()),
+      resultingEventId: v.union(v.id("events"), v.null()),
+    }),
+  ),
+});
+
+export const listForMember = query({
   args: {},
-  returns: v.array(schema.doc("polls")),
+  returns: v.array(memberPollListItem),
   handler: async (ctx) => {
-    await requireMember(ctx);
-    return await openPollsNewestFirst(ctx);
+    const viewer = await requireMember(ctx);
+
+    const [open, closed] = await Promise.all([
+      newestFirstForMember(ctx, "open"),
+      newestFirstForMember(ctx, "closed"),
+    ]);
+    const polls = [...open, ...closed];
+
+    // The viewer's answers come back in one index read for the whole list
+    // and are joined in memory. Asking per Poll — or worse, per Candidate
+    // Date — would be a read per row for rows this one query already holds.
+    const [datesPerPoll, viewerAnswers] = await Promise.all([
+      Promise.all(polls.map((poll) => candidateDatesInOrder(ctx, poll._id))),
+      ctx.db
+        .query("availabilities")
+        .withIndex("by_member_id", (q) => q.eq("memberId", viewer._id))
+        .order("desc")
+        .take(VIEWER_ANSWER_LIMIT),
+    ]);
+    const answered = new Set<Id<"candidateDates">>(viewerAnswers.map((a) => a.candidateDateId));
+
+    return polls.map((poll, index) => {
+      const candidateDates = datesPerPoll[index];
+      const answeredCount = candidateDates.filter((date) => answered.has(date._id)).length;
+      const winner = candidateDates.find((date) => date._id === poll.winningCandidateDateId);
+
+      return {
+        _id: poll._id,
+        _creationTime: poll._creationTime,
+        title: poll.title,
+        status: poll.status,
+        deadlineAt: poll.deadlineAt,
+        candidateDateCount: candidateDates.length,
+        responseState: viewerResponseState(candidateDates.length, answeredCount),
+        outcome:
+          poll.status === "closed"
+            ? {
+                winningStartsAt: winner?.startsAt ?? null,
+                winningEndsAt: winner?.endsAt ?? null,
+                resultingEventId: poll.resultingEventId ?? null,
+              }
+            : null,
+      };
+    });
   },
 });

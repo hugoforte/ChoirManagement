@@ -15,7 +15,8 @@ import { DEFAULT_VOICE_PARTS } from "./lib/pieceAttachmentPolicy";
 //                       user, so authenticated E2E and manual review need no
 //                       "promote me" step against a fresh database.
 //   demoBulletin      — content again, but it needs an author, so it runs
-//                       after the roster rather than inside demo.
+//   demoPoll            after the roster rather than inside demo. One
+//                       mutation each, so seeding one never re-runs another.
 //
 // Why pre-seeding a Member works without touching the auth path at all:
 // `members.ensureCurrentMember` looks the caller up by `clerkUserId` and, when
@@ -41,8 +42,9 @@ const DEMO_PIECES = [
   },
 ];
 
-// Bounds the two lookups demoBulletin does over tables the demo seed itself
-// fills, rather than an unbounded .collect() on a table a real choir grows.
+// Bounds the lookups demoBulletin and demoPoll do over tables the demo seed
+// itself fills, rather than an unbounded .collect() on a table a real choir
+// grows.
 const SEED_SCAN_LIMIT = 200;
 
 const DEMO_REHEARSAL_TITLE = "Tuesday Rehearsal";
@@ -203,6 +205,94 @@ export const demoBulletin = internalMutation({
   },
 });
 
+// A Poll needs an author and answers, so like demoBulletin it runs after the
+// roster rather than inside `demo` (#88).
+const DEMO_POLL = {
+  title: "Summer Concert date",
+  description: "Three Saturdays could work for the summer concert. Mark the ones you could sing.",
+  location: "Town Cathedral",
+};
+
+// Leaves the grid with something to read: the author has answered every
+// date, the next Member only the first, and anyone after that not at all —
+// so a reviewer signing in as any seeded Role meets a different one of the
+// three response states on /polls, and the "not answered yet" tally (the
+// most useful column, #9) is non-zero.
+const DEMO_ANSWERS = ["available", "if_needed", "unavailable"] as const;
+
+export const demoPoll = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    requireSeedableDeployment();
+
+    const existingPolls = await ctx.db.query("polls").take(1);
+    if (existingPolls.length > 0) {
+      return null;
+    }
+
+    // Any Member may answer a Poll, so unlike demoBulletin this falls back
+    // to whoever is on the roster — but with no roster at all there is
+    // nothing to seed rather than something to invent.
+    const members = await ctx.db.query("members").take(SEED_SCAN_LIMIT);
+    if (members.length === 0) {
+      console.warn("No Members to author the demo Poll — skipping Poll seeding.");
+      return null;
+    }
+    const author = members.find((member) => member.role === "director") ?? members[0];
+
+    const day = 24 * 60 * 60 * 1000;
+    const hour = 60 * 60 * 1000;
+    const now = Date.now();
+    // Relative to seed time and in the future, for the same reason the demo
+    // Events are: a Poll asking about dates that have all passed reads as
+    // broken rather than as seeded.
+    const startOfDayIn = (days: number) => new Date(now + days * day).setHours(0, 0, 0, 0);
+
+    const pollId = await ctx.db.insert("polls", {
+      ...DEMO_POLL,
+      status: "open",
+      // Advisory only — nothing closes the Poll when it passes (#9).
+      deadlineAt: new Date(now + 7 * day).setHours(23, 59, 59, 999),
+      updatedAt: now,
+      createdByMemberId: author._id,
+    });
+
+    // Two date-only Candidate Dates and one carrying a time window, so a
+    // preview shows both shapes the grid has to render.
+    const starts = [startOfDayIn(14), startOfDayIn(21), startOfDayIn(28) + 19 * hour];
+    const candidateDateIds: Id<"candidateDates">[] = [];
+    for (const [displayOrder, startsAt] of starts.entries()) {
+      candidateDateIds.push(
+        await ctx.db.insert("candidateDates", {
+          pollId,
+          startsAt,
+          endsAt: displayOrder === 2 ? startsAt + 2 * hour : undefined,
+          displayOrder,
+        }),
+      );
+    }
+
+    const others = members.filter((member) => member._id !== author._id);
+    for (const [index, candidateDateId] of candidateDateIds.entries()) {
+      await ctx.db.insert("availabilities", {
+        candidateDateId,
+        memberId: author._id,
+        value: DEMO_ANSWERS[index],
+      });
+    }
+    if (others.length > 0) {
+      await ctx.db.insert("availabilities", {
+        candidateDateId: candidateDateIds[0],
+        memberId: others[0]._id,
+        value: "if_needed",
+      });
+    }
+
+    return null;
+  },
+});
+
 // Idempotent by clerkUserId, so re-running against an already-seeded
 // deployment corrects drift rather than creating duplicate Members.
 // `clerkUserId` must be the full Clerk token identifier
@@ -282,8 +372,11 @@ export const preview = internalMutation({
       }
     }
 
-    // Last, because it needs an author from the roster above.
+    // Last, because they need an author from the roster above. A deployment
+    // without SEED_ROLE_MEMBERS returns before this and seeds neither —
+    // which is right: it has no Members to hang them on either.
     await ctx.runMutation(internal.seed.demoBulletin, {});
+    await ctx.runMutation(internal.seed.demoPoll, {});
     return null;
   },
 });

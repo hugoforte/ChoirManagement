@@ -228,3 +228,93 @@ test("seeding refuses to run when ALLOW_DEMO_SEED is not set", async () => {
     process.env.ALLOW_DEMO_SEED = previous;
   }
 });
+
+async function seedRoleMembers(t: ReturnType<typeof convexTest>) {
+  const roles = ["director", "chorister", "admin"] as const;
+  for (const role of roles) {
+    await t.mutation(internal.seed.upsertRoleMember, {
+      clerkUserId: `https://example.clerk.accounts.dev|user_${role}`,
+      name: `E2E ${role}`,
+      email: `${role}+clerk_test@example.com`,
+      role,
+    });
+  }
+}
+
+test("demoPoll seeds one open Poll with Candidate Dates a reviewer can answer", async () => {
+  const t = convexTest(schema, modules);
+  await seedRoleMembers(t);
+
+  await t.mutation(internal.seed.demoPoll, {});
+
+  const poll = await t.run(async (ctx) => await ctx.db.query("polls").unique());
+  const candidateDates = await t.run(async (ctx) => await ctx.db.query("candidateDates").collect());
+  expect(poll).toMatchObject({ status: "open", title: "Summer Concert date" });
+  expect(candidateDates).toHaveLength(3);
+  // Same rule as the demo Events: a Poll asking only about dates that have
+  // passed reads as broken rather than as seeded.
+  for (const candidateDate of candidateDates) {
+    expect(candidateDate.startsAt).toBeGreaterThan(Date.now());
+  }
+});
+
+// The point of seeding answers at all: a preview's grid shows every response
+// state, including the gaps that make a Poll self-policing (#9).
+test("demoPoll leaves the demo Poll partly answered", async () => {
+  const t = convexTest(schema, modules);
+  await seedRoleMembers(t);
+
+  await t.mutation(internal.seed.demoPoll, {});
+
+  const availabilities = await t.run(async (ctx) => await ctx.db.query("availabilities").collect());
+  const candidateDates = await t.run(async (ctx) => await ctx.db.query("candidateDates").collect());
+  const members = await t.run(async (ctx) => await ctx.db.query("members").collect());
+  expect(availabilities.length).toBeGreaterThan(0);
+  expect(availabilities.length).toBeLessThan(candidateDates.length * members.length);
+});
+
+test("demoPoll is idempotent", async () => {
+  const t = convexTest(schema, modules);
+  await seedRoleMembers(t);
+
+  await t.mutation(internal.seed.demoPoll, {});
+  await t.mutation(internal.seed.demoPoll, {});
+
+  const polls = await t.run(async (ctx) => await ctx.db.query("polls").collect());
+  const candidateDates = await t.run(async (ctx) => await ctx.db.query("candidateDates").collect());
+  expect(polls).toHaveLength(1);
+  expect(candidateDates).toHaveLength(3);
+});
+
+// A Poll needs an author, so with no roster there is nothing to seed rather
+// than something to invent.
+test("demoPoll seeds nothing when there are no Members to author it", async () => {
+  const t = convexTest(schema, modules);
+
+  await t.mutation(internal.seed.demoPoll, {});
+
+  const polls = await t.run(async (ctx) => await ctx.db.query("polls").collect());
+  expect(polls).toHaveLength(0);
+});
+
+test("preview seeds the demo Poll after the Role Members it needs", async () => {
+  const t = convexTest(schema, modules);
+  const previousRoleMembers = process.env.SEED_ROLE_MEMBERS;
+  process.env.SEED_ROLE_MEMBERS = JSON.stringify([
+    {
+      clerkUserId: "https://example.clerk.accounts.dev|user_director",
+      name: "E2E Director",
+      email: "director+clerk_test@example.com",
+      role: "director",
+    },
+  ]);
+  try {
+    await t.mutation(internal.seed.preview, {});
+  } finally {
+    process.env.SEED_ROLE_MEMBERS = previousRoleMembers;
+  }
+
+  const poll = await t.run(async (ctx) => await ctx.db.query("polls").unique());
+  const director = await t.run(async (ctx) => await ctx.db.query("members").unique());
+  expect(poll?.createdByMemberId).toBe(director?._id);
+});
