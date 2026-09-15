@@ -52,7 +52,7 @@ Every child PR must clear all of these before it is considered done:
 2. `npm test` — vitest across `convex/**/*.test.ts` and `src/**/*.test.{ts,tsx}`.
 3. The narrowest relevant Playwright project (`chromium-director`, `chromium-admin`, or `chromium-guest`).
 4. CI green on the PR: the `check` and `e2e-guest` workflows.
-5. **Manual verification on the branch's own Vercel preview deployment**, signed in as the seeded Role that the change affects (`admin+clerk_test@example.com` / `director+…` / `chorister+…`, password `a`).
+5. **Hand-off to the repo owner** per AGENTS.md's Feature Delivery Workflow step 6: the PR waits, with its preview URL and the seeded Role to sign in as, until the owner has done the manual preview verification and named the PR to merge. The orchestrator's own preview check is a smoke test, not the gate. Merging deploys to production.
 
 Step 5 is why seeding matters more than usual here. `#82` seeds a demo Bulletin and `#88` seeds an open Poll; until those land, later previews have nothing to look at.
 
