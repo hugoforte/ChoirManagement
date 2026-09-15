@@ -103,6 +103,40 @@ test("listForBulletin returns Remarks in display order, each with its Piece titl
   expect(remarks.map((remark) => remark.displayOrder)).toEqual([0, 1]);
 });
 
+test("listPublishedForBulletin gives a Chorister nothing for a draft and the ordered Remarks once published", async () => {
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+  const asDirector = t.withIdentity(directorIdentity);
+  const asChorister = t.withIdentity(choristerIdentity);
+  const bulletinId = await asDirector.mutation(api.bulletins.createDraft, { title: "Notes" });
+  const ode = await insertPiece(t, "Ode to Joy");
+  const lark = await insertPiece(t, "The Lark Ascending");
+  await asDirector.mutation(api.bulletinRemarks.add, {
+    bulletinId,
+    pieceId: ode,
+    text: "Watch the tempo.",
+  });
+  await asDirector.mutation(api.bulletinRemarks.add, {
+    bulletinId,
+    pieceId: lark,
+    text: "Sopranos, bar 42.",
+  });
+
+  // A draft's Remarks stay behind manageBulletins — the reading view shows
+  // a Chorister nothing at all until the Bulletin goes out.
+  expect(await asChorister.query(api.bulletinRemarks.listPublishedForBulletin, { bulletinId })).toEqual(
+    [],
+  );
+
+  await asDirector.mutation(api.bulletins.publish, { bulletinId });
+
+  const remarks = await asChorister.query(api.bulletinRemarks.listPublishedForBulletin, {
+    bulletinId,
+  });
+  expect(remarks.map((remark) => remark.pieceTitle)).toEqual(["Ode to Joy", "The Lark Ascending"]);
+  expect(remarks.map((remark) => remark.text)).toEqual(["Watch the tempo.", "Sopranos, bar 42."]);
+});
+
 test("a Remark may name a Piece that is not on the anchored Event's Setlist", async () => {
   const t = convexTest(schema, modules);
   await seedMembers(t);

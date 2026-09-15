@@ -96,6 +96,32 @@ export const listForBulletin = query({
   },
 });
 
+// The Member-facing twin of listForBulletin, for #82's reading view: every
+// signed-in Member may read a published Bulletin's Remarks (#49), but a
+// draft's stay behind manageBulletins. Returning [] rather than throwing on
+// a draft keeps this a companion to bulletins.getPublished, which already
+// resolves a draft to the 404 — two rejections for one stale link would be
+// one too many.
+export const listPublishedForBulletin = query({
+  args: { bulletinId: v.id("bulletins") },
+  returns: v.array(remarkEntry),
+  handler: async (ctx, { bulletinId }) => {
+    await requireMember(ctx);
+    const bulletin = await ctx.db.get("bulletins", bulletinId);
+    if (!bulletin || bulletin.status !== "published") return [];
+
+    const remarks = await remarksInOrder(ctx, bulletinId);
+    const titleByPieceId = await pieceTitlesById(
+      ctx,
+      remarks.map((remark) => remark.pieceId),
+    );
+    return remarks.map((remark) => ({
+      ...remark,
+      pieceTitle: titleByPieceId.get(remark.pieceId) ?? "Untitled",
+    }));
+  },
+});
+
 export const add = mutation({
   args: {
     bulletinId: v.id("bulletins"),
