@@ -120,11 +120,15 @@ export function ClosePollPanel({ grid }: { grid: PollGrid }) {
           ) : (
             <fieldset className="mt-3" disabled={confirming !== null}>
               <legend className="text-sm">Winning Candidate Date</legend>
-              <ul className="mt-1 space-y-1">
+              {/* Plain divs, not a list: the Candidate Dates are already a
+                  list higher up the page, and giving these radios the same
+                  listitem role would make "the Poll's dates" ambiguous to
+                  anything reading by role, assistive tech included. */}
+              <div className="mt-1 space-y-1">
                 {candidateDates.map((candidateDate, column) => {
                   const tally = tallies[column];
                   return (
-                    <li key={candidateDate._id}>
+                    <div key={candidateDate._id}>
                       <label className="flex items-center gap-2 text-sm">
                         <input
                           type="radio"
@@ -139,10 +143,10 @@ export function ClosePollPanel({ grid }: { grid: PollGrid }) {
                           {tally.notAnswered} not answered yet
                         </span>
                       </label>
-                    </li>
+                    </div>
                   );
                 })}
-              </ul>
+              </div>
             </fieldset>
           )}
 
