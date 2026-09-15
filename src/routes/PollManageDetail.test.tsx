@@ -79,6 +79,9 @@ function renderPoll({
     if (name === getFunctionName(api.members.viewer)) return viewer;
     if (name === getFunctionName(api.choirSettings.get)) return { name: "Riverside Choir", logoUrl: null };
     if (name === getFunctionName(api.polls.getGrid)) return grid;
+    // AppShell subscribes to this for the Bulletins unread dot (#82); this
+    // file renders the real shell, so it sees the call.
+    if (name === getFunctionName(api.bulletins.hasUnread)) return false;
     throw new Error(`Unexpected useQuery call: ${name}`);
   }) as typeof useQuery);
 
@@ -157,6 +160,32 @@ describe("removing a Candidate Date", () => {
 
     expect(removeCandidateDate).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("moves focus onto the confirm button when the warning opens", () => {
+    renderPoll();
+
+    clickRemoveFor("2026-03-01");
+
+    expect(screen.getByRole("button", { name: "Yes, remove it" })).toHaveFocus();
+  });
+
+  test("returns focus to the Remove button it came from when cancelled", () => {
+    renderPoll();
+
+    clickRemoveFor("2026-03-01");
+    fireEvent.click(screen.getByRole("button", { name: "Keep it" }));
+
+    expect(screen.getByRole("button", { name: "Remove 2026-03-01" })).toHaveFocus();
+  });
+
+  test("leaves the other dates' controls usable while one is confirming", () => {
+    renderPoll();
+
+    clickRemoveFor("2026-03-01");
+
+    expect(screen.getByRole("button", { name: "Remove 2026-03-01" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove 2026-03-08" })).toBeEnabled();
   });
 
   test("confirms one Candidate Date at a time", () => {

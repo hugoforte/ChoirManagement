@@ -7,7 +7,7 @@
 // Date has to say how many answers it destroys first (#86), and the grid's
 // tallies already hold that count — a second query for it could only
 // disagree with the numbers Members are looking at.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "convex/react";
 
@@ -63,9 +63,7 @@ function PollManageDetailContent() {
 
   const { run: updatePoll, pending: saving, error: saveError } = useTrackedMutation(api.polls.update);
   const { run: addDate, pending: adding, error: addError } = useTrackedMutation(api.polls.addCandidateDate);
-  const { run: removeDate, pending: removing, error: removeError } = useTrackedMutation(
-    api.polls.removeCandidateDate,
-  );
+  const { run: removeDate, error: removeError } = useTrackedMutation(api.polls.removeCandidateDate);
   const {
     run: reorderDates,
     pending: reordering,
@@ -79,6 +77,18 @@ function PollManageDetailContent() {
   // beside the date it is about, and a native confirm() can't carry the
   // count of answers at stake in its own styling.
   const [confirmingRemoval, setConfirmingRemoval] = useState<Id<"candidateDates"> | null>(null);
+
+  // An inline confirmation swaps controls in and out under the keyboard, so
+  // focus has to be placed deliberately: onto the confirm button when it
+  // opens, and back where it came from when it closes. Without this a
+  // keyboard user is dropped on <body> mid-task, with the warning they just
+  // raised nowhere near their focus.
+  const confirmButtonRef = useRef<HTMLButtonElement | null>(null);
+  const removeButtonRefs = useRef(new Map<Id<"candidateDates">, HTMLButtonElement | null>());
+  const listHeadingRef = useRef<HTMLParagraphElement | null>(null);
+  // Where focus lands when the confirmation closes: the Remove button it
+  // came from, or the list heading once that button is on its way out.
+  const focusOnCloseRef = useRef<Id<"candidateDates"> | "list" | null>(null);
 
   const poll = grid?.poll;
 
@@ -95,6 +105,21 @@ function PollManageDetailContent() {
     // Only re-sync when a different Poll loads, not on every keystroke —
     // the same reasoning as EventManageDetail's effect.
   }, [poll ? poll._id : undefined]);
+
+  // Runs after the commit that enables the Remove button again, which a
+  // focus() call inside the click handler would beat — a disabled button
+  // refuses focus.
+  useEffect(() => {
+    if (confirmingRemoval !== null) {
+      confirmButtonRef.current?.focus();
+      return;
+    }
+    const target = focusOnCloseRef.current;
+    if (target === null) return;
+    focusOnCloseRef.current = null;
+    if (target === "list") listHeadingRef.current?.focus();
+    else removeButtonRefs.current.get(target)?.focus();
+  }, [confirmingRemoval]);
 
   if (grid === null) return <NotFound />;
   if (grid === undefined) return <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>;
@@ -144,6 +169,9 @@ function PollManageDetailContent() {
   }
 
   async function handleRemove(candidateDate: Doc<"candidateDates">) {
+    // Its own Remove button goes with the row, so focus falls back to the
+    // heading the list sits under.
+    focusOnCloseRef.current = "list";
     setConfirmingRemoval(null);
     setLastAction("remove");
     await removeDate({ candidateDateId: candidateDate._id });
@@ -215,7 +243,11 @@ function PollManageDetailContent() {
       </form>
 
       <div className="border-t border-stone-200 pt-4 dark:border-stone-800">
-        <p className={labelClass}>Candidate Dates</p>
+        {/* tabIndex -1 so focus has somewhere to land when the row it was
+            in is removed — never in the tab order itself. */}
+        <p ref={listHeadingRef} tabIndex={-1} className={labelClass}>
+          Candidate Dates
+        </p>
         {candidateDates.length === 0 ? (
           <p className={hintClass}>No Candidate Dates yet.</p>
         ) : (
@@ -227,13 +259,17 @@ function PollManageDetailContent() {
                 <li key={candidateDate._id} className="text-sm">
                   <div className="flex items-center justify-between">
                     <span>{dateLabel}</span>
-                    {!closed && !confirming && (
+                    {/* Stays mounted while its own confirmation is open,
+                        merely disabled: unmounting it would pull the
+                        keyboard out of the row it belongs to, and "Keep it"
+                        has to have somewhere to put focus back. */}
+                    {!closed && (
                       <span className="flex gap-2">
                         <button
                           type="button"
                           aria-label={`Move ${dateLabel} up`}
                           onClick={() => handleMove(candidateDates, i, -1)}
-                          disabled={i === 0 || reordering}
+                          disabled={i === 0 || reordering || confirming}
                         >
                           ↑
                         </button>
@@ -241,14 +277,18 @@ function PollManageDetailContent() {
                           type="button"
                           aria-label={`Move ${dateLabel} down`}
                           onClick={() => handleMove(candidateDates, i, 1)}
-                          disabled={i === candidateDates.length - 1 || reordering}
+                          disabled={i === candidateDates.length - 1 || reordering || confirming}
                         >
                           ↓
                         </button>
                         <button
                           type="button"
+                          ref={(node) => {
+                            removeButtonRefs.current.set(candidateDate._id, node);
+                          }}
                           aria-label={`Remove ${dateLabel}`}
                           onClick={() => setConfirmingRemoval(candidateDate._id)}
+                          disabled={confirming}
                           className={dangerLinkClass}
                         >
                           Remove
@@ -263,15 +303,18 @@ function PollManageDetailContent() {
                       </p>
                       <button
                         type="button"
+                        ref={confirmButtonRef}
                         onClick={() => handleRemove(candidateDate)}
-                        disabled={removing}
                         className={dangerLinkClass}
                       >
                         Yes, remove it
                       </button>
                       <button
                         type="button"
-                        onClick={() => setConfirmingRemoval(null)}
+                        onClick={() => {
+                          focusOnCloseRef.current = candidateDate._id;
+                          setConfirmingRemoval(null);
+                        }}
                         className={mutedLinkClass}
                       >
                         Keep it

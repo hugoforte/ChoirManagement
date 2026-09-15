@@ -41,9 +41,14 @@ const viewer: Doc<"members"> = {
 
 const setAvailability = vi.fn();
 
+type Answer = "available" | "unavailable" | "if_needed" | null;
+
 function renderPoll({
   status = "open" as Doc<"polls">["status"],
   deadlineAt = undefined as number | undefined,
+  // The viewer's own row, against the Poll's two Candidate Dates. A gap
+  // next to an answer is what UnansweredDatesNotice prompts about (#86).
+  viewerValues = [null, null] as Answer[],
 } = {}) {
   const grid = {
     poll: {
@@ -65,7 +70,7 @@ function renderPoll({
       { _id: "date_2" as Id<"candidateDates">, _creationTime: 0, pollId: "poll_1" as Id<"polls">, startsAt: MARCH_8, endsAt: undefined, displayOrder: 1 },
     ],
     rows: [
-      { memberId: viewer._id, name: "Chris Chorister", isViewer: true, values: [null, null] },
+      { memberId: viewer._id, name: "Chris Chorister", isViewer: true, values: viewerValues },
       { memberId: "member_2" as Id<"members">, name: "Dana Director", isViewer: false, values: ["available", null] },
     ],
     tallies: [
@@ -117,6 +122,18 @@ describe("PollDetail", () => {
     renderPoll({ deadlineAt: new Date(2026, 1, 20).getTime() });
 
     expect(screen.getByText(/responses by 2026-02-20/)).toBeInTheDocument();
+  });
+
+  test("prompts a viewer who answered one date but not the other", () => {
+    renderPoll({ viewerValues: ["available", null] });
+
+    expect(screen.getByRole("status")).toHaveTextContent("1 Candidate Date needs your answer: 2026-03-08");
+  });
+
+  test("leaves the prompt off a closed Poll, which nobody can answer", () => {
+    renderPoll({ status: "closed", viewerValues: ["available", null] });
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   test("renders a closed Poll read-only", () => {
