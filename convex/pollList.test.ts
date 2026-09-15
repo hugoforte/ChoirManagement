@@ -256,3 +256,74 @@ test("the list is bounded at 50 Polls per section", async () => {
 
   expect(polls).toHaveLength(50);
 });
+
+// The read of the viewer's own Availabilities is bounded, so it has to be
+// newest-first: truncating the oldest answers costs nothing (they belong to
+// Polls already past the list's own cut), while truncating the newest would
+// report the Polls actually on screen as unanswered.
+test("a Member with more answers than the read bound still gets the newest Poll right", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId, choristerId } = await seedMembers(t);
+
+  // Enough old answers to fill the 1000-row bound on their own.
+  await t.run(async (ctx) => {
+    const oldPollId = await ctx.db.insert("polls", {
+      title: "Years of answered Polls",
+      status: "closed",
+      updatedAt: MARCH_1,
+      createdByMemberId: directorId,
+    });
+    for (let i = 0; i < 1000; i += 1) {
+      const candidateDateId = await ctx.db.insert("candidateDates", {
+        pollId: oldPollId,
+        startsAt: MARCH_1 + i * DAY,
+        displayOrder: i,
+      });
+      await ctx.db.insert("availabilities", {
+        candidateDateId,
+        memberId: choristerId,
+        value: "available",
+      });
+    }
+  });
+
+  const asChorister = t.withIdentity(choristerIdentity);
+  const pollId = await t.withIdentity(directorIdentity).mutation(api.polls.create, {
+    title: "Spring Concert",
+    candidateDates: [{ startsAt: MARCH_1 }, { startsAt: MARCH_1 + DAY }],
+  });
+  for (const candidateDateId of await candidateDateIds(t, pollId)) {
+    await asChorister.mutation(api.polls.setAvailability, { candidateDateId, value: "available" });
+  }
+
+  const polls = await asChorister.query(api.polls.listForMember, {});
+
+  expect(polls[0]).toMatchObject({ title: "Spring Concert", responseState: "complete" });
+});
+
+// listForMember reads one Poll's Candidate Dates per row, so that read is
+// capped too — 50 Polls must not mean 50 unbounded reads.
+test("a Poll's Candidate Dates are read under a cap", async () => {
+  const t = convexTest(schema, modules);
+  const { directorId } = await seedMembers(t);
+
+  await t.run(async (ctx) => {
+    const pollId = await ctx.db.insert("polls", {
+      title: "Absurdly many dates",
+      status: "open",
+      updatedAt: MARCH_1,
+      createdByMemberId: directorId,
+    });
+    for (let i = 0; i < 60; i += 1) {
+      await ctx.db.insert("candidateDates", {
+        pollId,
+        startsAt: MARCH_1 + i * DAY,
+        displayOrder: i,
+      });
+    }
+  });
+
+  const polls = await t.withIdentity(choristerIdentity).query(api.polls.listForMember, {});
+
+  expect(polls[0].candidateDateCount).toBe(50);
+});

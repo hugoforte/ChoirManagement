@@ -49,6 +49,8 @@ function renderPoll({
   // The viewer's own row, against the Poll's two Candidate Dates. A gap
   // next to an answer is what UnansweredDatesNotice prompts about (#86).
   viewerValues = [null, null] as Answer[],
+  winningCandidateDateId = undefined as Id<"candidateDates"> | undefined,
+  resultingEventId = undefined as Id<"events"> | undefined,
 } = {}) {
   const grid = {
     poll: {
@@ -59,8 +61,8 @@ function renderPoll({
       location: "St Mary's",
       status,
       deadlineAt,
-      winningCandidateDateId: undefined,
-      resultingEventId: undefined,
+      winningCandidateDateId,
+      resultingEventId,
       updatedAt: 0,
       createdByMemberId: "member_2" as Id<"members">,
       updatedByMemberId: undefined,
@@ -141,5 +143,25 @@ describe("PollDetail", () => {
 
     expect(screen.getByText("This Poll is closed. Closed Polls are read-only.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /on 2026-03-01/ })).not.toBeInTheDocument();
+  });
+
+  // An open Poll has no outcome to report — nothing has been settled yet
+  // (#88). PollOutcome's own rendering is covered in its component test.
+  test("offers no outcome while the Poll is open", () => {
+    renderPoll();
+
+    expect(screen.queryByText(/This Poll settled on/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/closed with no winning date/)).not.toBeInTheDocument();
+  });
+
+  test("shows a closed Poll's outcome beside its still-browsable grid", () => {
+    renderPoll({
+      status: "closed",
+      winningCandidateDateId: "date_2" as Id<"candidateDates">,
+      resultingEventId: "event_1" as Id<"events">,
+    });
+
+    expect(screen.getByText(/This Poll settled on 2026-03-08/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View the Event" })).toHaveAttribute("href", "/events/event_1");
   });
 });

@@ -58,14 +58,20 @@ async function openPollsNewestFirst(ctx: QueryCtx | MutationCtx) {
     .take(200);
 }
 
+// Far above any plausible Poll — a Director proposing more than 50 dates is
+// not a case this feature has — but a real cap rather than a comment about
+// one, because listForMember calls this once per Poll in its list: 50
+// unbounded reads is a different thing from 50 bounded ones. Both sides of
+// reorderCandidateDates' permutation check read through here, so they stay
+// consistent with each other at any size.
+const CANDIDATE_DATE_LIMIT = 50;
+
 async function candidateDatesInOrder(ctx: QueryCtx | MutationCtx, pollId: Id<"polls">) {
-  // Bounded by one Poll's own authoring — a handful of dates, the same
-  // shape as events.roster collecting one Event's RSVPs.
   return await ctx.db
     .query("candidateDates")
     .withIndex("by_poll_id_and_display_order", (q) => q.eq("pollId", pollId))
     .order("asc")
-    .collect();
+    .take(CANDIDATE_DATE_LIMIT);
 }
 
 export const create = mutation({
@@ -415,9 +421,11 @@ export const getGrid = query({
 const MEMBER_POLL_LIMIT = 50;
 
 // One row per Candidate Date the viewer has ever answered, across every
-// Poll. The bound only bites on a deployment with hundreds of Polls, where
-// the list itself is already truncated — and truncating here can only
-// understate a Member's progress, never invent an answer they didn't give.
+// Poll. Read newest first, which is what makes the bound safe: truncation
+// drops a Member's oldest answers, and those belong to Polls already past
+// this list's own 50-per-section cut. Read oldest first it would do the
+// opposite — keep answers to Polls nobody can see and report the Polls on
+// screen as unanswered.
 const VIEWER_ANSWER_LIMIT = 1000;
 
 const pollResponseState = v.union(
@@ -484,6 +492,7 @@ export const listForMember = query({
       ctx.db
         .query("availabilities")
         .withIndex("by_member_id", (q) => q.eq("memberId", viewer._id))
+        .order("desc")
         .take(VIEWER_ANSWER_LIMIT),
     ]);
     const answered = new Set<Id<"candidateDates">>(viewerAnswers.map((a) => a.candidateDateId));
