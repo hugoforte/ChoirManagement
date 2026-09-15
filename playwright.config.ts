@@ -42,7 +42,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium-guest",
-      testMatch: /public-events\.spec\.ts/,
+      testMatch: /(public-events|shared-bulletin)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
     {
