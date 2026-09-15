@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.31.0",
+    "@convex-dev/resend": "^0.2.8",
     "convex": "^1.34.1",
     "markdown-it": "^15.0.2",
     "react": "^19.0.0",

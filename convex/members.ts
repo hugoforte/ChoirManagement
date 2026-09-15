@@ -40,6 +40,24 @@ export const updateRole = mutation({
   },
 });
 
+// The Member's own opt-out from the email a published Bulletin sends (#52).
+// requireMember rather than requireCan, and it patches the caller's own row
+// only — there is deliberately no memberId argument, so no Role can set
+// anybody else's preference and nobody can be silently unsubscribed.
+//
+// Stores `true` rather than clearing the field when re-enabled: absent means
+// "never chose", and keeping the distinction costs nothing while making an
+// explicit opt-in readable in the data.
+export const setEmailBulletins = mutation({
+  args: { enabled: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { enabled }) => {
+    const member = await requireMember(ctx);
+    await ctx.db.patch("members", member._id, { emailBulletins: enabled });
+    return null;
+  },
+});
+
 // Returns the current signed-in Member's record, or null if signed out or
 // if this is their first sign-in and ensureCurrentMember hasn't run yet.
 export const viewer = query({

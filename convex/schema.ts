@@ -41,6 +41,12 @@ export default defineSchema({
     // entry compares it against the newest publishedAt to show an unread
     // indicator (#49). Absent until the Member first opens that list.
     lastReadBulletinsAt: v.optional(v.number()),
+    // Whether this Member receives the email a Bulletin sends on publish
+    // (#52). Absent means opted in: a Member who has never touched the
+    // toggle — and every Member already on the roster when this shipped —
+    // gets the email, which is the behaviour the email replaces. Only
+    // `false` opts out.
+    emailBulletins: v.optional(v.boolean()),
   })
     .index("by_clerk_user_id", ["clerkUserId"])
     .index("by_email", ["email"]),
@@ -240,6 +246,41 @@ export default defineSchema({
     // The Piece reverse lookup: Piece detail lists recent Remarks about that
     // Piece, newest first, filtered to published Bulletins by the caller.
     .index("by_piece_id", ["pieceId"]),
+
+  // One Member's copy of the email a Bulletin sends on publish (#52). A row
+  // per recipient rather than per batch, because the thing a Director needs
+  // to see is *which* Member's address bounced — a batch-level count would
+  // say "one failed" and leave them guessing. Written `queued` inside the
+  // publish transaction, then advanced by the send action and by Resend's
+  // delivery webhook.
+  bulletinEmailSends: defineTable({
+    bulletinId: v.id("bulletins"),
+    memberId: v.id("members"),
+    // queued → sent once Resend accepts it → delivered/bounced once the
+    // webhook says so. `failed` is terminal and always carries `error`.
+    status: v.union(
+      v.literal("queued"),
+      v.literal("sent"),
+      v.literal("delivered"),
+      v.literal("bounced"),
+      v.literal("failed"),
+    ),
+    // The Resend component's own EmailId, returned when the send is
+    // enqueued. Absent while queued, and absent on a row that failed before
+    // it ever reached the provider.
+    providerMessageId: v.optional(v.string()),
+    // Why this row is `failed` or `bounced`, in the provider's own words.
+    // Kept rather than logged: a Director looking at the delivery summary
+    // has no access to deployment logs.
+    error: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    // The per-Bulletin delivery summary on the manage detail page.
+    .index("by_bulletin_id", ["bulletinId"])
+    // Resolves a webhook event back to its row. The field is optional, so
+    // every not-yet-sent row indexes under undefined — the lookup must take
+    // a real string id, exactly as bulletins.by_share_link_token must.
+    .index("by_provider_message_id", ["providerMessageId"]),
 
   // A request for the Choir's Availability across several Candidate Dates,
   // used to settle on a date before an Event exists (#9). Carries *draft*

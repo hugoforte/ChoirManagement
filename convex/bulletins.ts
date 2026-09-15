@@ -12,6 +12,7 @@ import { v } from "convex/values";
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireCan, requireMember } from "./lib/auth";
+import { queueBulletinEmails } from "./bulletinEmails";
 import schema from "./schema";
 
 // A manage-list row: the stored Bulletin plus the anchored Event's title,
@@ -151,10 +152,19 @@ export const update = mutation({
 // Irreversible: there is no un-publish (#49). Publishing is also the single
 // notification trigger, which is why a second publish is an error rather
 // than a no-op — it would otherwise silently re-stamp publishedAt.
+//
+// `sendEmail` is an explicit argument with no default (#52): a Director
+// publishing a minor correction must be able to skip the email, and the
+// choice has to be made at the one moment it can be made at all. Because a
+// Bulletin publishes exactly once, a later edit can never re-send — that
+// falls out of the lifecycle rather than needing a rule of its own.
+//
+// Returns the number of Members being emailed, which is zero both when the
+// Director declined and when this deployment has no mail provider.
 export const publish = mutation({
-  args: { bulletinId: v.id("bulletins") },
-  returns: v.null(),
-  handler: async (ctx, { bulletinId }) => {
+  args: { bulletinId: v.id("bulletins"), sendEmail: v.boolean() },
+  returns: v.number(),
+  handler: async (ctx, { bulletinId, sendEmail }) => {
     const member = await requireCan(ctx, "manageBulletins");
     const bulletin = await ctx.db.get("bulletins", bulletinId);
     if (!bulletin) throw new Error("Bulletin not found");
@@ -169,7 +179,10 @@ export const publish = mutation({
       updatedAt: now,
       updatedByMemberId: member._id,
     });
-    return null;
+
+    // Queueing writes rows and schedules an action; the network call itself
+    // happens in that action, never here.
+    return sendEmail ? await queueBulletinEmails(ctx, bulletinId) : 0;
   },
 });
 
@@ -194,6 +207,15 @@ export const remove = mutation({
       .withIndex("by_bulletin_id_and_display_order", (q) => q.eq("bulletinId", bulletinId))
       .collect();
     await Promise.all(remarks.map((remark) => ctx.db.delete("bulletinRemarks", remark._id)));
+
+    // The delivery rows are owned by their Bulletin too (#52) — a summary of
+    // emails for a Bulletin that no longer exists has nothing to say, and
+    // leaving them would keep answering Resend's webhook forever.
+    const sends = await ctx.db
+      .query("bulletinEmailSends")
+      .withIndex("by_bulletin_id", (q) => q.eq("bulletinId", bulletinId))
+      .collect();
+    await Promise.all(sends.map((send) => ctx.db.delete("bulletinEmailSends", send._id)));
 
     await ctx.db.delete("bulletins", bulletinId);
     return null;
