@@ -50,6 +50,18 @@ Convex doesn't enforce unique indexes. "One RSVP per Member per Event" is a writ
 
 "One Availability per Member per Candidate Date" is a write-time invariant, not a schema constraint — Convex has no unique indexes. `by_candidate_date_id_and_member_id` exists to be read before an insert so the mutation can patch instead, exactly as `by_event_and_member` works for `rsvps`. The resemblance stops there: an Availability is a hypothetical about an unchosen date and is never copied into an `rsvps` row when a Poll produces an Event.
 
+### A delivery row per recipient, not per send (#52)
+
+`bulletinEmailSends` holds one row per Member per Bulletin, not one row per batch. The thing a Director needs from this table is *which* Member's address bounced — a batch-level count would report "one failed" and leave them guessing, and a Director has no access to deployment logs to find out. The row is written `queued` inside the `publish` transaction, advanced to `sent` by the scheduled send action, and to `delivered`/`bounced` by Resend's webhook. `failed` is terminal and always carries `error`.
+
+`by_provider_message_id` resolves a webhook event back to its row. The field is optional — a queued row has no provider id yet — so every unsent row indexes under `undefined`, and the lookup must take a real string id. Same trap as `bulletins.by_share_link_token`.
+
+The rows are owned by their Bulletin and are deleted with it, like Remarks: a delivery summary for a Bulletin that no longer exists has nothing to say.
+
+### `members.emailBulletins` is absent-means-opted-in
+
+Like `lastReadBulletinsAt` above, this is an optional field carrying a per-Member preference, and its absence is meaningful: absent means the Member is emailed. Only an explicit `false` opts out. That is what makes the field additive — every Member already on the roster when #52 shipped keeps receiving the email the feature was built to replace, with no backfill.
+
 ### The unread marker is one field on `members`
 
 `members.lastReadBulletinsAt` is optional and is the whole notification model: the Bulletins nav entry compares it against the newest `publishedAt`, and opening the list advances it. No notification table, no feed, no per-Bulletin read receipts — building a general notification model from this one caller's perspective would get it wrong, and #57 keeps that job.
