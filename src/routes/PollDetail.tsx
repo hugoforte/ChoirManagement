@@ -12,6 +12,7 @@ import { useTrackedMutation } from "../lib/useTrackedMutation";
 import { toDateInput } from "../lib/datetime";
 import type { AvailabilityValue } from "../lib/availability";
 import { AvailabilityGrid } from "../components/polls/AvailabilityGrid";
+import { UnansweredDatesNotice } from "../components/polls/UnansweredDatesNotice";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import NotFound from "./NotFound";
 
@@ -53,6 +54,7 @@ function PollDetailContent() {
       )}
 
       <div className="mt-6">
+        {!closed && <UnansweredDatesNotice grid={grid} />}
         <AvailabilityGrid grid={grid} onSet={closed ? undefined : handleSet} pending={pending} />
       </div>
       {error && <p className="mt-2 text-sm text-danger">{error}</p>}
