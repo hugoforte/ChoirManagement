@@ -128,7 +128,7 @@ test("listPublishedForBulletin gives a Chorister nothing for a draft and the ord
     [],
   );
 
-  await asDirector.mutation(api.bulletins.publish, { bulletinId });
+  await asDirector.mutation(api.bulletins.publish, { bulletinId, sendEmail: false });
 
   const remarks = await asChorister.query(api.bulletinRemarks.listPublishedForBulletin, {
     bulletinId,
@@ -175,8 +175,8 @@ test("listForPiece hides a draft Bulletin's Remarks and shows published ones, ne
       text: `Remark on ${bulletinId}`,
     });
   }
-  await asDirector.mutation(api.bulletins.publish, { bulletinId: older });
-  await asDirector.mutation(api.bulletins.publish, { bulletinId: newer });
+  await asDirector.mutation(api.bulletins.publish, { bulletinId: older, sendEmail: false });
+  await asDirector.mutation(api.bulletins.publish, { bulletinId: newer, sendEmail: false });
   // Backdate so the ordering is unmistakable rather than two publishes
   // landing in the same millisecond.
   await t.run(async (ctx) => {
@@ -250,7 +250,7 @@ test("editing a Remark marks its published Bulletin as edited", async () => {
     pieceId,
     text: "Watch the tempo.",
   });
-  await asDirector.mutation(api.bulletins.publish, { bulletinId });
+  await asDirector.mutation(api.bulletins.publish, { bulletinId, sendEmail: false });
   await t.run(
     async (ctx) => await ctx.db.patch("bulletins", bulletinId, { publishedAt: 500, updatedAt: 500 }),
   );
@@ -278,7 +278,7 @@ test("removing a Remark takes it off the Piece and marks the Bulletin edited", a
     pieceId,
     text: "Watch the tempo.",
   });
-  await asDirector.mutation(api.bulletins.publish, { bulletinId });
+  await asDirector.mutation(api.bulletins.publish, { bulletinId, sendEmail: false });
   await t.run(
     async (ctx) => await ctx.db.patch("bulletins", bulletinId, { publishedAt: 500, updatedAt: 500 }),
   );

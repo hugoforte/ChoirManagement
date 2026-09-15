@@ -156,12 +156,34 @@ content and Role grants cannot be aimed at a real choir's production deployment.
   started. Generate JSON with a real serializer.
 - **A failing `--preview-run` seed does not fail the Vercel build.** Empty preview, green check.
 
+## Resend (Bulletin email)
+
+Optional, and deliberately the least automatable thing in the stack — which is why #52 was split
+out of #49 rather than built into the publish path.
+
+- **Not automatable: sender-domain verification.** Resend issues SPF/DKIM (and optionally DMARC)
+  records that must be added at the *domain owner's* registrar. The values are per-domain and
+  per-account, so they cannot be checked into the repo or guessed by a script, and adding them
+  needs DNS credentials no CI job should hold. This is the hard human step.
+- **Not automatable in practice: the API key and the webhook.** Both are created in the Resend
+  dashboard; the key is shown once. Resend has an API, but bootstrapping it needs a key, so the
+  first one is manual either way.
+- **Automatable: everything downstream.** Setting `RESEND_API_KEY`, `BULLETINS_FROM_EMAIL`,
+  `APP_BASE_URL` and `RESEND_WEBHOOK_SECRET` is `npx convex env set`, same as
+  `CLERK_JWT_ISSUER_DOMAIN`.
+- **Previews are unconfigured on purpose.** Each preview branch gets its own Convex backend with
+  its own empty environment, so a preview never sends mail. `e2e/bulletins-manage.spec.ts`
+  asserts the degraded message, so configuring a key on a preview would fail that spec — which is
+  the correct trade: the suite proves the unconfigured path, and a real send is verified by hand.
+
 ## Remaining manual steps
 
 1. Clerk application creation, plus the `email`/`name` session-token claims.
 2. Clerk CLI login (must run on the human's own machine).
 3. Vercel project creation / GitHub git-integration link.
 4. Vercel automation-bypass-secret generation — only if Deployment Protection is re-enabled.
+5. Resend account, sending-domain DNS verification, API key and webhook — only if you want
+   Bulletin email. See the Resend section above and Step 8 of `self-hosting.md`.
 
 Everything else above is scriptable today.
 

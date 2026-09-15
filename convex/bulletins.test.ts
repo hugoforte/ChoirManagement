@@ -93,7 +93,7 @@ test("listAll shows drafts to a manager, newest drafts before published Bulletin
 
   const older = await asDirector.mutation(api.bulletins.createDraft, { title: "Older draft" });
   const newer = await asDirector.mutation(api.bulletins.createDraft, { title: "Newer draft" });
-  await asDirector.mutation(api.bulletins.publish, { bulletinId: older });
+  await asDirector.mutation(api.bulletins.publish, { bulletinId: older, sendEmail: false });
 
   const list = await asDirector.query(api.bulletins.listAll, {});
   expect(list.map((b) => b._id)).toEqual([newer, older]);
@@ -146,12 +146,12 @@ test("publish sets publishedAt once and a second publish throws", async () => {
   const asDirector = t.withIdentity(directorIdentity);
   const bulletinId = await asDirector.mutation(api.bulletins.createDraft, { title: "Notes" });
 
-  await asDirector.mutation(api.bulletins.publish, { bulletinId });
+  await asDirector.mutation(api.bulletins.publish, { bulletinId, sendEmail: false });
   const published = await t.run(async (ctx) => await ctx.db.get("bulletins", bulletinId));
   expect(published?.status).toBe("published");
   expect(published?.publishedAt).toEqual(expect.any(Number));
 
-  await expect(asDirector.mutation(api.bulletins.publish, { bulletinId })).rejects.toThrow(
+  await expect(asDirector.mutation(api.bulletins.publish, { bulletinId, sendEmail: false })).rejects.toThrow(
     /already published/,
   );
   const unchanged = await t.run(async (ctx) => await ctx.db.get("bulletins", bulletinId));
@@ -166,7 +166,7 @@ test("publish refuses a Chorister", async () => {
     .mutation(api.bulletins.createDraft, { title: "Notes" });
 
   await expect(
-    t.withIdentity(choristerIdentity).mutation(api.bulletins.publish, { bulletinId }),
+    t.withIdentity(choristerIdentity).mutation(api.bulletins.publish, { bulletinId, sendEmail: false }),
   ).rejects.toThrow(/Requires capability: manageBulletins/);
 });
 
@@ -175,7 +175,7 @@ test("an edit after publishing bumps updatedAt but leaves publishedAt alone", as
   await seedMembers(t);
   const asDirector = t.withIdentity(directorIdentity);
   const bulletinId = await asDirector.mutation(api.bulletins.createDraft, { title: "Notes" });
-  await asDirector.mutation(api.bulletins.publish, { bulletinId });
+  await asDirector.mutation(api.bulletins.publish, { bulletinId, sendEmail: false });
   const atPublish = await t.run(async (ctx) => await ctx.db.get("bulletins", bulletinId));
 
   // Publishing sets updatedAt and publishedAt to the same instant, so the
@@ -203,7 +203,7 @@ test("saving an unchanged published Bulletin does not mark it edited", async () 
   const asDirector = t.withIdentity(directorIdentity);
   const bulletinId = await asDirector.mutation(api.bulletins.createDraft, { title: "Notes" });
   await asDirector.mutation(api.bulletins.update, { bulletinId, body: "Call time is 6:45." });
-  await asDirector.mutation(api.bulletins.publish, { bulletinId });
+  await asDirector.mutation(api.bulletins.publish, { bulletinId, sendEmail: false });
   // Backdate both timestamps, so a bump would be unmistakable rather than
   // hidden by the two mutations landing within the same millisecond.
   await t.run(
@@ -280,7 +280,7 @@ test("a Director may not delete a published Bulletin, but an Admin may", async (
   await seedMembers(t);
   const asDirector = t.withIdentity(directorIdentity);
   const bulletinId = await asDirector.mutation(api.bulletins.createDraft, { title: "Notes" });
-  await asDirector.mutation(api.bulletins.publish, { bulletinId });
+  await asDirector.mutation(api.bulletins.publish, { bulletinId, sendEmail: false });
 
   await expect(asDirector.mutation(api.bulletins.remove, { bulletinId })).rejects.toThrow(
     /Requires capability: deletePublishedBulletins/,

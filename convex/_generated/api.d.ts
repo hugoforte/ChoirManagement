@@ -8,13 +8,17 @@
  * @module
  */
 
+import type * as bulletinEmails from "../bulletinEmails.js";
 import type * as bulletinRemarks from "../bulletinRemarks.js";
 import type * as bulletinShareLinks from "../bulletinShareLinks.js";
 import type * as bulletins from "../bulletins.js";
 import type * as choirSettings from "../choirSettings.js";
 import type * as events from "../events.js";
+import type * as http from "../http.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_bulletinEmail from "../lib/bulletinEmail.js";
 import type * as lib_capabilities from "../lib/capabilities.js";
+import type * as lib_markdown from "../lib/markdown.js";
 import type * as lib_pieceAccess from "../lib/pieceAccess.js";
 import type * as lib_pieceAttachmentPolicy from "../lib/pieceAttachmentPolicy.js";
 import type * as lib_text from "../lib/text.js";
@@ -33,13 +37,17 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  bulletinEmails: typeof bulletinEmails;
   bulletinRemarks: typeof bulletinRemarks;
   bulletinShareLinks: typeof bulletinShareLinks;
   bulletins: typeof bulletins;
   choirSettings: typeof choirSettings;
   events: typeof events;
+  http: typeof http;
   "lib/auth": typeof lib_auth;
+  "lib/bulletinEmail": typeof lib_bulletinEmail;
   "lib/capabilities": typeof lib_capabilities;
+  "lib/markdown": typeof lib_markdown;
   "lib/pieceAccess": typeof lib_pieceAccess;
   "lib/pieceAttachmentPolicy": typeof lib_pieceAttachmentPolicy;
   "lib/text": typeof lib_text;
@@ -78,4 +86,6 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  "resend": import("@convex-dev/resend/_generated/component.js").ComponentApi<"resend">,
+};

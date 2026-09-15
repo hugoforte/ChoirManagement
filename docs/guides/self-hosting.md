@@ -159,6 +159,132 @@ npx convex run members:bootstrapFirstAdmin '{"email":"you@yourchoir.org"}' --pro
 
 ---
 
+## Step 8 — Email Bulletins to the choir (optional)
+
+When a Director publishes a Bulletin, the app can email it to every Member. This step switches that on. Skip it for now if you like: without it, publishing still works and the manage page just says "Email is not configured for this deployment".
+
+**You'll need**
+
+- About 30 minutes.
+- Access to your domain's DNS settings (wherever you bought `yourchoir.org`).
+- The Convex dashboard open at your production deployment ([dashboard.convex.dev](https://dashboard.convex.dev)).
+- A free [Resend](https://resend.com) account. Resend is the service that actually delivers the mail.
+
+### The fast way: run the setup wizard
+
+A script does everything below except the two things only you can do: create one Resend key, and paste DNS records at your registrar. Run it from the repo folder after the app has been deployed once:
+
+```
+npm run setup:email
+```
+
+It asks for your app's address, opens Resend for the key, registers your domain, prints the DNS records to add, waits while you add them, creates a send-only key for the app, registers the delivery webhook, and writes all four values into your production Convex deployment. It remembers where it got to, so if DNS takes a while you can stop and re-run later.
+
+If you would rather do it by hand, or want to know what the script did, the rest of this step is the same procedure click by click.
+
+### The manual way
+
+Four values move from Resend and your domain into Convex. Collect them as you go:
+
+| Value | You get it from | Looks like |
+| --- | --- | --- |
+| API key | Resend, Step 8a | `re_...` |
+| From address | Your verified domain, Step 8a | `Sorrento Choir <bulletins@yourchoir.org>` |
+| App URL | Wherever people open the app | `https://yourchoir.org` (no trailing slash) |
+| Webhook secret | Resend, Step 8c | `whsec_...` |
+
+### 8a. Prove to Resend that you own your domain
+
+1. Sign up at [resend.com](https://resend.com) and sign in.
+2. Left menu, **Domains**, then **Add Domain**. Enter the domain you will send from, for example `yourchoir.org`. Pick the region closest to you.
+3. Resend now shows a list of DNS records to add. Keep this page open.
+4. In a second tab, open your domain's DNS settings at your registrar (Cloudflare, Namecheap, GoDaddy, and so on).
+5. For each record Resend lists, add a record of the same type with the same name and value. There are usually three or four: one or two for **DKIM**, one for **SPF**, and optionally one for **DMARC**. Copy them exactly from your Resend page. No guide can print them for you, because they are unique to your domain.
+6. Back in Resend, click **Verify DNS Records**. Green ticks usually appear within a few minutes; occasionally it takes an hour or more. You can carry on with 8b while you wait.
+7. Left menu, **API Keys**, then **Create API Key**. Name it `ChoirManagement`, permission **Sending access**, click **Add**. Copy the key that starts with `re_` now. Resend shows it only once.
+
+### 8b. Give Convex the three sending values
+
+These go into your **Convex** deployment, not Vercel and not a file in the repo, because the sending code runs inside Convex.
+
+1. Open the Convex dashboard, choose your project, and make sure the **Production** deployment is selected at the top.
+2. **Settings**, then **Environment Variables**, then **Add**.
+3. Add these three, one at a time:
+
+   | Name | Value |
+   | --- | --- |
+   | `RESEND_API_KEY` | the `re_...` key from 8a |
+   | `BULLETINS_FROM_EMAIL` | `Your Choir <bulletins@yourchoir.org>`, on the domain you verified |
+   | `APP_BASE_URL` | the address people open the app at, for example `https://choir-management-tawny.vercel.app` or `https://yourchoir.org`, with no `/` at the end |
+
+4. Click **Save**.
+
+All three must be present. If any one is missing, the app behaves as if this whole step was skipped. That is on purpose: a key with no From address cannot send, and a From address with no app URL would mail out a link that goes nowhere.
+
+If you prefer the command line, the same thing from inside the repo folder is:
+
+```
+npx convex env set RESEND_API_KEY 're_your_key_here' --prod
+npx convex env set BULLETINS_FROM_EMAIL 'Your Choir <bulletins@yourchoir.org>' --prod
+npx convex env set APP_BASE_URL 'https://yourchoir.org' --prod
+```
+
+### 8c. Let Resend report back whether mail arrived
+
+Without this, mail still goes out, but the app only learns of outright refusals. With it, the "Email delivery" panel on each published Bulletin fills in Delivered and Bounced on its own and names the Members whose mail failed.
+
+1. Find your webhook address. In the Convex dashboard: **Settings**, then **URL & Deploy Key**, and copy the **HTTP Actions URL**. It ends in `.convex.site`. Add `/resend-webhook` to the end:
+
+   ```
+   https://your-deployment-name.convex.site/resend-webhook
+   ```
+
+2. In Resend: left menu, **Webhooks**, then **Add Webhook**.
+3. Paste the address from step 1 as the endpoint URL.
+4. Under events, tick every one that starts with `email.` (sent, delivered, delivery delayed, complained, bounced, failed). Click **Add**.
+5. Resend now shows the webhook's **Signing Secret**, starting `whsec_`. Copy it.
+6. Back in the Convex dashboard, **Settings**, **Environment Variables**, add `RESEND_WEBHOOK_SECRET` with that value, and **Save**.
+
+Until the secret is set, the webhook address answers "503 not configured" and Resend's reports are ignored. Nothing breaks; you just do not get delivery details yet.
+
+### 8d. Send one and watch it arrive
+
+1. In the app, sign in as a Director or Admin, go to **Bulletins**, then **Manage**, and open a published Bulletin (or create and publish a test one).
+2. Tick **Email this Bulletin to the roster** next to Publish, then publish.
+3. The **Email delivery** panel appears under the Bulletin. Here is what each line means:
+
+   | Panel says | Meaning |
+   | --- | --- |
+   | Handed to provider | The app gave the email to Resend. Nobody has received it yet. |
+   | Delivered | Resend confirmed the receiving mail server accepted it. |
+   | Bounced | The address rejected it. The Member's name is listed. |
+   | Failed | Resend refused to send, with Resend's own reason shown. |
+
+4. With the webhook set up, rows move to Delivered within a minute or two. Without it, the app asks Resend for an update about one minute after publishing and again fifteen minutes later.
+
+A row still at "Handed to provider" after fifteen minutes means something is wrong. Check the table below.
+
+### 8e. If it does not work
+
+| What you see | Likely cause | Fix |
+| --- | --- | --- |
+| No email checkbox; page says "Email is not configured" | One of the three values in 8b is missing or on the wrong deployment | Confirm all three exist on the **Production** deployment in the Convex dashboard |
+| Failed rows mentioning "domain" or "not verified" | DNS records not yet verified in Resend | Wait for the green ticks in Resend, then publish again |
+| Failed rows mentioning "API key" or 401 | Wrong or revoked key | Create a new key in Resend and update `RESEND_API_KEY` |
+| Failed rows mentioning the From address or 422 | `BULLETINS_FROM_EMAIL` is not on the verified domain or is malformed | Use `Name <address@yourchoir.org>` on the exact domain you verified |
+| Everything stays at "Handed to provider" and Resend's dashboard shows them delivered | Webhook not registered or secret not set | Do 8c; check the webhook URL ends in `.convex.site/resend-webhook` |
+| The link in the email opens the wrong site | `APP_BASE_URL` wrong | Set it to the address people actually use, no trailing slash |
+
+Each Vercel preview deployment has its own Convex backend, so previews never send email unless you configure them separately. Leave previews unconfigured; the test suite assumes that.
+
+### 8f. What Members see
+
+- Every Member is emailed by default. A Member can opt out with **Email me published Bulletins** at the bottom of the Bulletins list. Opting out never hides a Bulletin from the archive.
+- The Director chooses per publish. A Bulletin publishes once, so editing it later never re-sends. A substantive correction is a new Bulletin ([#49](https://github.com/hugoforte/ChoirManagement/issues/49)).
+- If the Bulletin has a Share Link, the email links to that. Otherwise it links to the Bulletin inside the app.
+
+---
+
 ## Fallback: deploying without Vercel
 
 Vercel is the recommended path (native Convex build-command integration, and it's what the CI/CD design in `docs/architecture/ci-cd-and-testing.md` assumes) — but nothing about the app requires it. Because the frontend is a Vite-built static SPA (ADR-0003), you can host it anywhere that serves static files:

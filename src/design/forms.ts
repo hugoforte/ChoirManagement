@@ -18,3 +18,5 @@ export const mutedLinkClass = "text-sm text-stone-500 underline hover:text-stone
 export const dangerLinkClass = "text-sm text-danger hover:underline";
 
 export const cardClass = "rounded-lg border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900";
+
+export const checkboxClass = "h-4 w-4 shrink-0 accent-brand-600";

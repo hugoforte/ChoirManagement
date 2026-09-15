@@ -30,10 +30,22 @@ test("director can draft a Bulletin, publish it, and edit it afterwards", async 
   await page.reload();
   await expect(page.getByLabel("Body")).toHaveValue(body);
 
+  // Preview deployments carry no RESEND_API_KEY (#52), so the Director is
+  // told email is off rather than offered a checkbox that does nothing.
+  // This assertion is the degraded path, and it is the only email behaviour
+  // E2E can prove — verifying a real send needs a verified sender domain,
+  // which is the human step this slice stops at.
+  await expect(page.getByText(/Email is not configured for this deployment/)).toBeVisible();
+  await expect(page.getByLabel("Email this Bulletin to the roster")).toHaveCount(0);
+
   await page.getByRole("button", { name: "Publish" }).click();
   await expect(page.getByText(/^Published /)).toBeVisible();
   // There is no un-publish (#49), so the action is gone for good.
   await expect(page.getByRole("button", { name: "Publish" })).toHaveCount(0);
+
+  // Nothing was queued, and the delivery panel says so rather than sitting
+  // empty.
+  await expect(page.getByText(/This Bulletin wasn.t emailed\./)).toBeVisible();
 
   // A published Bulletin stays editable and gains an "edited" timestamp
   // beside its published date; publishing never happens twice.

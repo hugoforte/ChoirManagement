@@ -11,6 +11,8 @@ import { Id } from "../../convex/_generated/dataModel";
 import { useTrackedMutation } from "../lib/useTrackedMutation";
 import { editedAt } from "../lib/bulletin";
 import { formatTimestamp } from "../lib/datetime";
+import { EmailDeliveryPanel } from "../components/bulletins/EmailDeliveryPanel";
+import { PublishControl } from "../components/bulletins/PublishControl";
 import { ShareLinkPanel } from "../components/bulletins/ShareLinkPanel";
 import { Markdown } from "../design/Markdown";
 import { RemarksEditor } from "../components/bulletins/RemarksEditor";
@@ -45,9 +47,6 @@ function BulletinManageDetailContent() {
   // subscriptions, so the preview reading it here costs nothing extra.
   const remarks = useQuery(api.bulletinRemarks.listForBulletin, { bulletinId: id });
   const { run: updateBulletin, pending: saving, error: saveError } = useTrackedMutation(api.bulletins.update);
-  const { run: publishBulletin, pending: publishing, error: publishError } = useTrackedMutation(
-    api.bulletins.publish,
-  );
 
   const [fields, setFields] = useState({ title: "", body: "", eventId: NO_EVENT });
 
@@ -66,7 +65,6 @@ function BulletinManageDetailContent() {
 
   if (bulletin === null) return <NotFound />;
 
-  const error = saveError ?? publishError;
   const edited = bulletin ? editedAt(bulletin) : null;
 
   async function handleSave(e: React.FormEvent) {
@@ -142,29 +140,15 @@ function BulletinManageDetailContent() {
               </select>
             </div>
 
-            <div className="flex items-center gap-3">
-              <button type="submit" disabled={saving || !fields.title.trim()} className={primaryButtonClass}>
-                Save
-              </button>
-              {bulletin.status === "draft" && (
-                <button
-                  type="button"
-                  onClick={() => publishBulletin({ bulletinId: id })}
-                  disabled={publishing}
-                  className={primaryButtonClass}
-                >
-                  Publish
-                </button>
-              )}
-            </div>
-            {bulletin.status === "draft" && (
-              <p className="text-xs text-stone-500 dark:text-stone-400">
-                Publishing is permanent — there is no un-publish. Save first; publishing doesn't save the
-                form.
-              </p>
-            )}
-            {error && <p className="text-sm text-danger">{error}</p>}
+            <button type="submit" disabled={saving || !fields.title.trim()} className={primaryButtonClass}>
+              Save
+            </button>
+            {saveError && <p className="text-sm text-danger">{saveError}</p>}
           </form>
+
+          {/* Outside the form on purpose: publishing is its own decision with
+              its own control, and it deliberately does not save the form. */}
+          {bulletin.status === "draft" && <PublishControl bulletinId={id} />}
 
           <div className="border-t border-stone-200 pt-3 dark:border-stone-800">
             <RemarksEditor bulletinId={id} eventId={bulletin.eventId} />
@@ -179,6 +163,8 @@ function BulletinManageDetailContent() {
           </section>
 
           <ShareLinkPanel bulletinId={id} published={bulletin.status === "published"} />
+
+          {bulletin.status === "published" && <EmailDeliveryPanel bulletinId={id} />}
         </div>
       )}
     </>
