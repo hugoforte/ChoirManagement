@@ -1,7 +1,12 @@
-// Editing an open Poll (#84): its draft Event metadata and advisory
+// Editing an open Poll (#84, #86): its draft Event metadata and advisory
 // deadline, and adding, removing or reordering its Candidate Dates. The
-// prompts owed to Members who already answered are #86's; the availability
-// grid is #85's; closing on a winner is #87's.
+// availability grid Members answer on is #85's; closing on a winner is
+// #87's.
+//
+// Subscribes to polls.getGrid rather than polls.get: removing a Candidate
+// Date has to say how many answers it destroys first (#86), and the grid's
+// tallies already hold that count — a second query for it could only
+// disagree with the numbers Members are looking at.
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "convex/react";
@@ -17,15 +22,31 @@ import {
   toCandidateDateInput,
   type CandidateDateDraft,
 } from "../lib/candidateDate";
+import type { PollGrid } from "../components/polls/AvailabilityGrid";
 import { CandidateDateFields } from "../design/CandidateDateFields";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
-import { dangerLinkClass, inputClass, labelClass, primaryButtonClass } from "../design/forms";
+import { dangerLinkClass, inputClass, labelClass, mutedLinkClass, primaryButtonClass } from "../design/forms";
 import NotFound from "./NotFound";
 
 const hintClass = "mt-1 text-xs text-stone-500 dark:text-stone-400";
 
 // Which of the four mutations on this page owns the error slot.
 type PollAction = "save" | "add" | "remove" | "reorder";
+
+// What removing a Candidate Date destroys: every Member who answered it,
+// whatever they answered. `notAnswered` is the one tally left out — there
+// is nothing recorded to lose there.
+function answeredCount(tally: PollGrid["tallies"][number]) {
+  return tally.available + tally.unavailable + tally.if_needed;
+}
+
+// Names the cost before the Director pays it (#86). There is no undo, so
+// the count is in the sentence rather than behind a generic "are you sure".
+function removalWarning(dateLabel: string, answers: number) {
+  if (answers === 0) return `Remove ${dateLabel}? There are no answers recorded yet.`;
+  const answered = answers === 1 ? "1 recorded answer" : `${answers} recorded answers`;
+  return `Remove ${dateLabel}? This deletes ${answered} and can't be undone.`;
+}
 
 export default function PollManageDetail() {
   return (
@@ -38,11 +59,13 @@ export default function PollManageDetail() {
 function PollManageDetailContent() {
   const { pollId } = useParams<{ pollId: string }>();
   const id = pollId as Id<"polls">;
-  const poll = useQuery(api.polls.get, { pollId: id });
+  const grid = useQuery(api.polls.getGrid, { pollId: id });
 
   const { run: updatePoll, pending: saving, error: saveError } = useTrackedMutation(api.polls.update);
   const { run: addDate, pending: adding, error: addError } = useTrackedMutation(api.polls.addCandidateDate);
-  const { run: removeDate, error: removeError } = useTrackedMutation(api.polls.removeCandidateDate);
+  const { run: removeDate, pending: removing, error: removeError } = useTrackedMutation(
+    api.polls.removeCandidateDate,
+  );
   const {
     run: reorderDates,
     pending: reordering,
@@ -52,6 +75,12 @@ function PollManageDetailContent() {
   const [fields, setFields] = useState({ title: "", description: "", location: "", deadline: "" });
   const [newDate, setNewDate] = useState<CandidateDateDraft>(emptyCandidateDate());
   const [lastAction, setLastAction] = useState<PollAction | null>(null);
+  // Removal is confirmed inline, one date at a time: the warning belongs
+  // beside the date it is about, and a native confirm() can't carry the
+  // count of answers at stake in its own styling.
+  const [confirmingRemoval, setConfirmingRemoval] = useState<Id<"candidateDates"> | null>(null);
+
+  const poll = grid?.poll;
 
   usePageTitle(poll?.title);
 
@@ -67,10 +96,11 @@ function PollManageDetailContent() {
     // the same reasoning as EventManageDetail's effect.
   }, [poll ? poll._id : undefined]);
 
-  if (poll === null) return <NotFound />;
-  if (poll === undefined) return <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>;
+  if (grid === null) return <NotFound />;
+  if (grid === undefined) return <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>;
 
-  const closed = poll.status === "closed";
+  const { candidateDates } = grid;
+  const closed = grid.poll.status === "closed";
   // A useTrackedMutation only ever clears its own error, so showing the
   // first non-null of the four would pin a failed Save above a later
   // successful Add. The single slot belongs to whichever action ran last,
@@ -114,8 +144,7 @@ function PollManageDetailContent() {
   }
 
   async function handleRemove(candidateDate: Doc<"candidateDates">) {
-    const label = formatCandidateDate(candidateDate.startsAt, candidateDate.endsAt);
-    if (!confirm(`Remove ${label}? This also deletes any Availability recorded for it.`)) return;
+    setConfirmingRemoval(null);
     setLastAction("remove");
     await removeDate({ candidateDateId: candidateDate._id });
   }
@@ -187,38 +216,71 @@ function PollManageDetailContent() {
 
       <div className="border-t border-stone-200 pt-4 dark:border-stone-800">
         <p className={labelClass}>Candidate Dates</p>
-        {poll.candidateDates.length === 0 ? (
+        {candidateDates.length === 0 ? (
           <p className={hintClass}>No Candidate Dates yet.</p>
         ) : (
           <ul className="mt-2 space-y-1">
-            {poll.candidateDates.map((candidateDate, i) => (
-              <li key={candidateDate._id} className="flex items-center justify-between text-sm">
-                <span>{formatCandidateDate(candidateDate.startsAt, candidateDate.endsAt)}</span>
-                {!closed && (
-                  <span className="flex gap-2">
-                    <button
-                      type="button"
-                      aria-label={`Move ${formatCandidateDate(candidateDate.startsAt, candidateDate.endsAt)} up`}
-                      onClick={() => handleMove(poll.candidateDates, i, -1)}
-                      disabled={i === 0 || reordering}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Move ${formatCandidateDate(candidateDate.startsAt, candidateDate.endsAt)} down`}
-                      onClick={() => handleMove(poll.candidateDates, i, 1)}
-                      disabled={i === poll.candidateDates.length - 1 || reordering}
-                    >
-                      ↓
-                    </button>
-                    <button type="button" onClick={() => handleRemove(candidateDate)} className={dangerLinkClass}>
-                      Remove
-                    </button>
-                  </span>
-                )}
-              </li>
-            ))}
+            {candidateDates.map((candidateDate, i) => {
+              const dateLabel = formatCandidateDate(candidateDate.startsAt, candidateDate.endsAt);
+              const confirming = confirmingRemoval === candidateDate._id;
+              return (
+                <li key={candidateDate._id} className="text-sm">
+                  <div className="flex items-center justify-between">
+                    <span>{dateLabel}</span>
+                    {!closed && !confirming && (
+                      <span className="flex gap-2">
+                        <button
+                          type="button"
+                          aria-label={`Move ${dateLabel} up`}
+                          onClick={() => handleMove(candidateDates, i, -1)}
+                          disabled={i === 0 || reordering}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Move ${dateLabel} down`}
+                          onClick={() => handleMove(candidateDates, i, 1)}
+                          disabled={i === candidateDates.length - 1 || reordering}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${dateLabel}`}
+                          onClick={() => setConfirmingRemoval(candidateDate._id)}
+                          className={dangerLinkClass}
+                        >
+                          Remove
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                  {confirming && (
+                    <div className="mt-1 flex flex-wrap items-center gap-3 rounded-lg bg-stone-100 px-3 py-2 dark:bg-stone-800">
+                      <p role="alert" className="text-stone-700 dark:text-stone-300">
+                        {removalWarning(dateLabel, answeredCount(grid.tallies[i]))}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleRemove(candidateDate)}
+                        disabled={removing}
+                        className={dangerLinkClass}
+                      >
+                        Yes, remove it
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingRemoval(null)}
+                        className={mutedLinkClass}
+                      >
+                        Keep it
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
 
