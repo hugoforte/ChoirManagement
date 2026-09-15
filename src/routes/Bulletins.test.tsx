@@ -74,7 +74,13 @@ function spyFor(reference: Parameters<typeof getFunctionName>[0]): Mock {
 
 function renderAs(
   role: Doc<"members">["role"],
-  archive: { results?: ArchiveRow[]; status?: string; loadMore?: Mock; hasUnread?: boolean } = {},
+  archive: {
+    results?: ArchiveRow[];
+    status?: string;
+    loadMore?: Mock;
+    hasUnread?: boolean;
+    emailConfigured?: boolean;
+  } = {},
 ) {
   const viewer: Doc<"members"> = {
     _id: "member_1" as Doc<"members">["_id"],
@@ -91,6 +97,9 @@ function renderAs(
     if (name === getFunctionName(api.members.viewer)) return viewer;
     if (name === getFunctionName(api.choirSettings.get)) return { name: "Riverside Choir", logoUrl: null };
     if (name === getFunctionName(api.bulletins.hasUnread)) return archive.hasUnread ?? false;
+    // The per-Member email opt-out hides itself unless a mail provider is
+    // configured (#52); these tests are about the archive, not the toggle.
+    if (name === getFunctionName(api.bulletinEmails.isConfigured)) return archive.emailConfigured ?? false;
     throw new Error(`Unexpected useQuery call: ${name}`);
   }) as typeof useQuery);
   vi.mocked(usePaginatedQuery).mockReturnValue({

@@ -10,6 +10,7 @@ import { api } from "../../convex/_generated/api";
 import { Doc } from "../../convex/_generated/dataModel";
 import { formatTimestamp } from "../lib/datetime";
 import { can } from "../lib/roles";
+import { EmailPreference } from "../components/bulletins/EmailPreference";
 import { MemberPage } from "../design/MemberPage";
 import { cardClass, linkClass, mutedLinkClass } from "../design/forms";
 
@@ -71,6 +72,9 @@ function BulletinsContent({ viewer }: { viewer: Doc<"members"> }) {
           Load more
         </button>
       )}
+
+      {/* Absent means opted in, matching how the send reads it (#52). */}
+      <EmailPreference enabled={viewer.emailBulletins !== false} />
     </>
   );
 }

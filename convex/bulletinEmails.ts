@@ -31,7 +31,7 @@ import {
   type ActionCtx,
   type MutationCtx,
 } from "./_generated/server";
-import { requireCan } from "./lib/auth";
+import { requireCan, requireMember } from "./lib/auth";
 import {
   bulletinEmailUrl,
   readEmailConfig,
@@ -352,12 +352,17 @@ function statusFromEvent(event: EmailEvent): { status: SendStatus; error?: strin
 
 // Whether this deployment can send at all. The manage page swaps the
 // "Email this Bulletin to the roster" checkbox for an explanation when it
-// can't, so a self-hoster isn't offered a control that does nothing.
+// can't, and every Member's opt-out toggle hides itself — so a self-hoster
+// isn't offered controls that do nothing.
+//
+// requireMember, not manageBulletins: the Chorister who decides whether to
+// receive Bulletin email needs this answer too. All it discloses to a signed-
+// in Member is whether this deployment sends email at all.
 export const isConfigured = query({
   args: {},
   returns: v.boolean(),
   handler: async (ctx) => {
-    await requireCan(ctx, "manageBulletins");
+    await requireMember(ctx);
     return readEmailConfig(process.env) !== null;
   },
 });

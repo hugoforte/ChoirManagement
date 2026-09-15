@@ -500,6 +500,17 @@ test("isConfigured reports the deployment's mail provider state", async () => {
   expect(await asDirector.query(api.bulletinEmails.isConfigured, {})).toBe(true);
 });
 
+// A Chorister reads this to decide whether to show their own opt-out.
+test("isConfigured is readable by any Member", async () => {
+  configureEmail();
+  const t = convexTest(schema, modules);
+  await seedMembers(t);
+
+  expect(await t.withIdentity(choristerIdentity).query(api.bulletinEmails.isConfigured, {})).toBe(
+    true,
+  );
+});
+
 test("deleting a Bulletin takes its delivery rows with it", async () => {
   configureEmail();
   const t = convexTest(schema, modules);
