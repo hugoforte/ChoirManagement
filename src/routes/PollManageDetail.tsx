@@ -23,6 +23,7 @@ import {
   type CandidateDateDraft,
 } from "../lib/candidateDate";
 import type { PollGrid } from "../components/polls/AvailabilityGrid";
+import { ClosePollPanel } from "../components/polls/ClosePollPanel";
 import { CandidateDateFields } from "../design/CandidateDateFields";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { dangerLinkClass, inputClass, labelClass, mutedLinkClass, primaryButtonClass } from "../design/forms";
@@ -336,6 +337,8 @@ function PollManageDetailContent() {
           </form>
         )}
       </div>
+
+      <ClosePollPanel grid={grid} />
 
       {error && <p className="text-sm text-danger">{error}</p>}
     </div>
