@@ -450,24 +450,6 @@ test("grid keeps its columns in the Poll's displayOrder", async () => {
   expect(grid?.candidateDates.map((c) => c.startsAt)).toEqual([MARCH_1 + 2 * DAY, MARCH_1, MARCH_1 + DAY]);
 });
 
-test("listOpen gives every Member the open Polls and leaves closed ones out", async () => {
-  const t = convexTest(schema, modules);
-  await seedMembers(t);
-  const asDirector = t.withIdentity(directorIdentity);
-  const closed = await asDirector.mutation(api.polls.create, {
-    title: "Last year's concert",
-    candidateDates: [{ startsAt: MARCH_1 }],
-  });
-  await closePoll(t, closed);
-  const open = await asDirector.mutation(api.polls.create, {
-    title: "This year's concert",
-    candidateDates: [{ startsAt: MARCH_1 }],
-  });
-
-  const polls = await t.withIdentity(choristerIdentity).query(api.polls.listOpen, {});
-  expect(polls.map((p) => p._id)).toEqual([open]);
-});
-
 test("a Poll's grid is closed to a caller with no identity", async () => {
   const t = convexTest(schema, modules);
   await seedMembers(t);
@@ -481,7 +463,7 @@ test("a Poll's grid is closed to a caller with no identity", async () => {
   // A Poll's grid names identifiable Members, so it is never reachable
   // without signing in (#9) — there is no token-shared or public twin.
   await expect(t.query(api.polls.getGrid, { pollId })).rejects.toThrow(/Not signed in/);
-  await expect(t.query(api.polls.listOpen, {})).rejects.toThrow(/Not signed in/);
+  await expect(t.query(api.polls.listForMember, {})).rejects.toThrow(/Not signed in/);
   await expect(
     t.mutation(api.polls.setAvailability, { candidateDateId: dates[0]._id, value: "available" }),
   ).rejects.toThrow(/Not signed in/);

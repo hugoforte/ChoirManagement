@@ -7,7 +7,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { useAuth } from "@clerk/clerk-react";
 import { useMutation, useQuery } from "convex/react";
-import { getFunctionName } from "convex/server";
+import { getFunctionName, type FunctionReturnType } from "convex/server";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -30,26 +30,47 @@ vi.mock("@clerk/clerk-react", async (importOriginal) => {
 
 vi.mock("convex/react", () => ({ useQuery: vi.fn(), useMutation: vi.fn() }));
 
-const MARCH_1 = new Date(2026, 2, 1).getTime();
+type PollListItem = FunctionReturnType<typeof api.polls.listForMember>[number];
 
-const openPolls: Doc<"polls">[] = [
+const MARCH_1 = new Date(2026, 2, 1).getTime();
+const MARCH_8 = new Date(2026, 2, 8).getTime();
+
+// Open first, then closed as history — the order polls.listForMember
+// returns, which the route splits into its two sections.
+const polls: PollListItem[] = [
   {
     _id: "poll_1" as Doc<"polls">["_id"],
-    _creationTime: 0,
+    _creationTime: 2,
     title: "Spring Concert",
-    description: undefined,
-    location: undefined,
     status: "open",
     deadlineAt: MARCH_1,
-    winningCandidateDateId: undefined,
-    resultingEventId: undefined,
-    updatedAt: 0,
-    createdByMemberId: "member_1" as Doc<"members">["_id"],
-    updatedByMemberId: undefined,
+    candidateDateCount: 3,
+    responseState: "partial",
+    outcome: null,
+  },
+  {
+    _id: "poll_2" as Doc<"polls">["_id"],
+    _creationTime: 1,
+    title: "Extra rehearsal",
+    status: "open",
+    deadlineAt: undefined,
+    candidateDateCount: 1,
+    responseState: "not_started",
+    outcome: null,
+  },
+  {
+    _id: "poll_3" as Doc<"polls">["_id"],
+    _creationTime: 0,
+    title: "Last year's concert",
+    status: "closed",
+    deadlineAt: undefined,
+    candidateDateCount: 2,
+    responseState: "complete",
+    outcome: { winningStartsAt: MARCH_8, winningEndsAt: null, resultingEventId: "event_1" as Doc<"events">["_id"] },
   },
 ];
 
-function renderAs(role: Doc<"members">["role"]) {
+function renderAs(role: Doc<"members">["role"], pollList: PollListItem[] = polls) {
   const viewer: Doc<"members"> = {
     _id: "member_1" as Doc<"members">["_id"],
     _creationTime: 0,
@@ -64,7 +85,7 @@ function renderAs(role: Doc<"members">["role"]) {
     const name = getFunctionName(query);
     if (name === getFunctionName(api.members.viewer)) return viewer;
     if (name === getFunctionName(api.choirSettings.get)) return { name: "Riverside Choir", logoUrl: null };
-    if (name === getFunctionName(api.polls.listOpen)) return openPolls;
+    if (name === getFunctionName(api.polls.listForMember)) return pollList;
     // AppShell subscribes to this for the Bulletins unread dot (#82); this
     // file renders the real shell, so it sees the call.
     if (name === getFunctionName(api.bulletins.hasUnread)) return false;
@@ -78,6 +99,13 @@ function renderAs(role: Doc<"members">["role"]) {
       </MemoryRouter>
     </ThemeProvider>,
   );
+}
+
+function listItemFor(title: string) {
+  const link = screen.getByRole("link", { name: title });
+  const item = link.closest("li");
+  if (!item) throw new Error(`Expected "${title}" to sit in a list item`);
+  return within(item);
 }
 
 beforeEach(() => {
@@ -116,5 +144,64 @@ describe("Polls", () => {
 
     const primaryNav = screen.getByRole("navigation", { name: "Primary" });
     expect(within(primaryNav).getByRole("link", { name: "Polls" })).toHaveAttribute("href", "/polls");
+  });
+
+  test("marks a Poll the viewer has only partly answered", () => {
+    renderAs("chorister");
+
+    expect(listItemFor("Spring Concert").getByText("Partly answered")).toBeInTheDocument();
+  });
+
+  test("marks a Poll the viewer has not started", () => {
+    renderAs("chorister");
+
+    expect(listItemFor("Extra rehearsal").getByText("No answers yet")).toBeInTheDocument();
+  });
+
+  test("marks a Poll the viewer has answered in full", () => {
+    renderAs("chorister");
+
+    expect(listItemFor("Last year's concert").getByText("All answered")).toBeInTheDocument();
+  });
+
+  test("counts the Candidate Dates each Poll asks about", () => {
+    renderAs("chorister");
+
+    expect(listItemFor("Spring Concert").getByText(/3 dates/)).toBeInTheDocument();
+  });
+
+  test("keeps closed Polls under a History heading, still linked to their grid", () => {
+    renderAs("chorister");
+
+    expect(screen.getByRole("heading", { name: "History" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Last year's concert" })).toHaveAttribute("href", "/polls/poll_3");
+  });
+
+  test("shows a closed Poll's winning date and the Event it became", () => {
+    renderAs("chorister");
+
+    const item = listItemFor("Last year's concert");
+    expect(item.getByText(/Settled on 2026-03-08/)).toBeInTheDocument();
+    expect(item.getByRole("link", { name: "View the Event" })).toHaveAttribute("href", "/events/event_1");
+  });
+
+  test("shows a closed Poll that settled on nothing", () => {
+    renderAs("chorister", [
+      { ...polls[2], outcome: { winningStartsAt: null, winningEndsAt: null, resultingEventId: null } },
+    ]);
+
+    expect(listItemFor("Last year's concert").getByText("Closed with no winning date")).toBeInTheDocument();
+  });
+
+  test("omits the History heading when no Poll has closed yet", () => {
+    renderAs("chorister", [polls[0]]);
+
+    expect(screen.queryByRole("heading", { name: "History" })).not.toBeInTheDocument();
+  });
+
+  test("tells a Member when there is nothing open to answer", () => {
+    renderAs("chorister", []);
+
+    expect(screen.getByText("No open Polls.")).toBeInTheDocument();
   });
 });

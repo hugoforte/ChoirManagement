@@ -13,6 +13,7 @@ import { toDateInput } from "../lib/datetime";
 import type { AvailabilityValue } from "../lib/availability";
 import { AvailabilityGrid } from "../components/polls/AvailabilityGrid";
 import { UnansweredDatesNotice } from "../components/polls/UnansweredDatesNotice";
+import { PollOutcome } from "../components/polls/PollOutcome";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import NotFound from "./NotFound";
 
@@ -52,6 +53,7 @@ function PollDetailContent() {
           This Poll is closed. Closed Polls are read-only.
         </p>
       )}
+      {closed && <PollOutcome poll={poll} candidateDates={grid.candidateDates} />}
 
       <div className="mt-6">
         {!closed && <UnansweredDatesNotice grid={grid} />}
