@@ -11,6 +11,7 @@ import { editedAt } from "../lib/bulletin";
 import { formatTimestamp } from "../lib/datetime";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { Markdown } from "../design/Markdown";
+import { RemarksList } from "../components/bulletins/RemarksList";
 import { cardClass, linkClass } from "../design/forms";
 import NotFound from "./NotFound";
 
@@ -21,6 +22,9 @@ export default function BulletinDetail() {
 function BulletinDetailContent() {
   const { bulletinId } = useParams<{ bulletinId: string }>();
   const bulletin = useQuery(api.bulletins.getPublished, { bulletinId: bulletinId as Id<"bulletins"> });
+  const remarks = useQuery(api.bulletinRemarks.listPublishedForBulletin, {
+    bulletinId: bulletinId as Id<"bulletins">,
+  });
   usePageTitle(bulletin?.title);
 
   if (bulletin === null) return <NotFound />;
@@ -53,11 +57,19 @@ function BulletinDetailContent() {
           honouring it (see src/design/Markdown.tsx). */}
       <Markdown source={bulletin.body} className="mt-4 text-sm" />
 
-      {/* REMARKS SLOT (#81) — the Remarks about Pieces this Bulletin carries
-          render here, below the body. #81 exports the RemarksList component;
-          wiring is one import plus `<RemarksList bulletinId={bulletin._id} />`
-          in this spot. Left empty rather than stubbed so there is nothing to
-          unpick, and no empty heading on a Bulletin that has no Remarks. */}
+      {/* The Remarks about Pieces this Bulletin carries (#81). Heading and
+          all only when there are some, so a Bulletin with none reads as
+          prose rather than as an empty section. */}
+      {remarks !== undefined && remarks.length > 0 && (
+        <section aria-labelledby="bulletin-remarks-heading" className="mt-6">
+          <h2 id="bulletin-remarks-heading" className="text-base font-semibold">
+            Remarks
+          </h2>
+          <div className="mt-3">
+            <RemarksList remarks={remarks} />
+          </div>
+        </section>
+      )}
     </article>
   );
 }

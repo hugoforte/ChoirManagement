@@ -14,6 +14,7 @@ import { Doc, Id } from "../../convex/_generated/dataModel";
 import { formatTimestamp } from "../lib/datetime";
 import { ThemeProvider } from "../design/ThemeProvider";
 import { asMutation } from "../test/convexMocks";
+import type { RemarkListItem } from "../components/bulletins/RemarksList";
 import BulletinDetail from "./BulletinDetail";
 
 vi.mock("@clerk/clerk-react", async (importOriginal) => {
@@ -53,7 +54,7 @@ function bulletin(overrides: Partial<ReadingView> = {}): ReadingView {
   };
 }
 
-function renderDetail(result: ReadingView | null | undefined) {
+function renderDetail(result: ReadingView | null | undefined, remarks: RemarkListItem[] = []) {
   const viewer: Doc<"members"> = {
     _id: "member_1" as Doc<"members">["_id"],
     _creationTime: 0,
@@ -70,6 +71,7 @@ function renderDetail(result: ReadingView | null | undefined) {
     if (name === getFunctionName(api.choirSettings.get)) return { name: "Riverside Choir", logoUrl: null };
     if (name === getFunctionName(api.bulletins.hasUnread)) return false;
     if (name === getFunctionName(api.bulletins.getPublished)) return result;
+    if (name === getFunctionName(api.bulletinRemarks.listPublishedForBulletin)) return remarks;
     throw new Error(`Unexpected useQuery call: ${name}`);
   }) as typeof useQuery);
 
@@ -131,6 +133,30 @@ describe("BulletinDetail", () => {
     renderDetail(bulletin({ body: "## What we covered" }));
 
     expect(readingView().getByRole("heading", { name: "What we covered" })).toBeInTheDocument();
+  });
+
+  test("renders the Remarks about Pieces below the body, each linking to its Piece", () => {
+    renderDetail(bulletin(), [
+      {
+        _id: "remark_1" as RemarkListItem["_id"],
+        pieceId: "piece_1" as RemarkListItem["pieceId"],
+        pieceTitle: "Sicut Cervus",
+        text: "Watch the entries in bar 12.",
+      },
+    ]);
+
+    expect(readingView().getByRole("heading", { name: "Remarks" })).toBeInTheDocument();
+    expect(readingView().getByText("Watch the entries in bar 12.")).toBeInTheDocument();
+    expect(readingView().getByRole("link", { name: "Sicut Cervus" })).toHaveAttribute(
+      "href",
+      "/library/piece_1",
+    );
+  });
+
+  test("shows no Remarks heading on a Bulletin that carries none", () => {
+    renderDetail(bulletin());
+
+    expect(readingView().queryByRole("heading", { name: "Remarks" })).not.toBeInTheDocument();
   });
 
   // getPublished answers null for a draft whoever is asking, so the reading
