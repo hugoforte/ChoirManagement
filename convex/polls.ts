@@ -557,9 +557,15 @@ export const close = mutation({
     const member = await requireCan(ctx, "managePolls");
     const poll = await requireOpenPoll(ctx, pollId);
 
+    // Closed and stamped in one patch: unlike the Candidate Date
+    // mutations, closing is already writing the Poll itself, so touchPoll
+    // would only be a second write of the same row.
     if (winningCandidateDateId === undefined) {
-      await ctx.db.patch("polls", pollId, { status: "closed" });
-      await touchPoll(ctx, pollId, member._id);
+      await ctx.db.patch("polls", pollId, {
+        status: "closed",
+        updatedAt: Date.now(),
+        updatedByMemberId: member._id,
+      });
       return null;
     }
 
@@ -590,8 +596,9 @@ export const close = mutation({
       status: "closed",
       winningCandidateDateId,
       resultingEventId,
+      updatedAt: Date.now(),
+      updatedByMemberId: member._id,
     });
-    await touchPoll(ctx, pollId, member._id);
     return resultingEventId;
   },
 });

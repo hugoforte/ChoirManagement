@@ -105,11 +105,12 @@ test("director closes a Poll on a winning date and the Event appears on the Even
   await page.getByRole("link", { name: title }).click();
   await page.waitForURL(/\/polls\/manage\/.+/);
 
-  // Both ways of closing confirm first; accepting is the deliberate act
-  // that a deadline passing never performs.
-  page.on("dialog", (dialog) => dialog.accept());
+  // Both ways of closing confirm inline first; accepting is the deliberate
+  // act that a deadline passing never performs.
   await page.getByRole("radio", { name: new RegExp(winningDate) }).check();
   await page.getByRole("button", { name: "Close and create Event" }).click();
+  await expect(page.getByRole("alert")).toContainText("cannot be reopened");
+  await page.getByRole("button", { name: "Yes, close and create it" }).click();
 
   const eventLink = page.getByRole("link", { name: "Open the Event this created" });
   await expect(eventLink).toBeVisible();

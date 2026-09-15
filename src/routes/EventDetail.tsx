@@ -79,8 +79,6 @@ function EventDetailContent({ viewer }: { viewer: Doc<"members"> }) {
             </>
           )}
 
-          <OriginatingPollAvailability eventId={event._id} />
-
           {roster !== undefined && (
             <>
               <h2 className="mt-6 text-xs font-semibold tracking-wide text-stone-500 dark:text-stone-400">
@@ -100,6 +98,8 @@ function EventDetailContent({ viewer }: { viewer: Doc<"members"> }) {
               )}
             </>
           )}
+
+          <OriginatingPollAvailability eventId={event._id} />
         </div>
       )}
     </>

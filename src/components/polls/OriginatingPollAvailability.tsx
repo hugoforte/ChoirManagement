@@ -1,9 +1,12 @@
 // The Poll behind an Event, on that Event's detail page (#87). An Event
 // created by promotion carries no RSVPs from the Poll — an Availability is a
 // hypothetical about an unchosen date and is never converted into a
-// commitment (ADR-0005) — so the Poll's answers are shown here for context
-// instead, labelled as availability and kept visibly apart from the RSVP
-// section above.
+// commitment (ADR-0005) — so the Poll's answers are shown for context
+// instead, under their own heading and never mixed into the RSVP sections.
+//
+// Sits last on the page, after the Event's own RSVPs: those are what this
+// Event actually has, and a grid of hypotheticals above them would invite
+// the reading the ADR exists to prevent.
 //
 // Renders nothing for an Event no Poll produced, which is most of them.
 import { Link } from "react-router-dom";

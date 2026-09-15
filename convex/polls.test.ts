@@ -33,6 +33,7 @@ async function seedMembers(t: ReturnType<typeof convexTest>) {
   return { directorId, choristerId };
 }
 
+const HOUR = 60 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
 const MARCH_1 = new Date(2026, 2, 1).getTime();
 
@@ -527,6 +528,30 @@ describe("closing a Poll", () => {
       startsAt: MARCH_1 + 7 * DAY,
       setlist: [],
       visibility: "private",
+    });
+  });
+
+  test("a winning window becomes an Event with its start and no end", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const asDirector = t.withIdentity(directorIdentity);
+    const pollId = await asDirector.mutation(api.polls.create, {
+      title: "Evening rehearsal",
+      candidateDates: [{ startsAt: MARCH_1, endsAt: MARCH_1 + 2 * HOUR }],
+    });
+    const candidateDates = (await asDirector.query(api.polls.get, { pollId }))!.candidateDates;
+
+    const eventId = await asDirector.mutation(api.polls.close, {
+      pollId,
+      winningCandidateDateId: candidateDates[0]._id,
+    });
+
+    // `events` carries no end field, so the window narrows to its start
+    // rather than growing the Events schema for one caller (#87).
+    const event = (await t.run(async (ctx) => ctx.db.get("events", eventId!)))!;
+    expect({ startsAt: event.startsAt, hasEnd: "endsAt" in event }).toEqual({
+      startsAt: MARCH_1,
+      hasEnd: false,
     });
   });
 
