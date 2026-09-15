@@ -67,3 +67,62 @@ test("director records an answer on a Poll's availability grid", async ({ page, 
   // unavailable.
   await expect(page.getByText("1 if needed")).toBeVisible();
 });
+
+// Closing and promotion (#87), end to end: the Poll's draft metadata becomes
+// a real Event on the Events list. A far-future Candidate Date keeps the
+// created Event in the upcoming half of that list whenever this runs.
+test("director closes a Poll on a winning date and the Event appears on the Events list", async ({
+  page,
+  context,
+}) => {
+  await setupClerkTestingToken({ context });
+
+  const title = `E2E Close Poll ${Date.now()}`;
+  const winningDate = "2099-06-12";
+
+  await page.goto("/polls/manage");
+  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Candidate Date 1", { exact: true }).fill("2099-06-05");
+  await page.getByRole("button", { name: "Add another date" }).click();
+  await page.getByLabel("Candidate Date 2", { exact: true }).fill(winningDate);
+  await page.getByRole("button", { name: "Create Poll" }).click();
+
+  const pollLink = page.getByRole("link", { name: title });
+  await expect(pollLink).toBeVisible();
+
+  // Answer first, so the close panel has a real tally to choose by — and so
+  // the assertion below that no RSVP came out of it means something.
+  await page.goto("/polls");
+  await page.getByRole("link", { name: title }).click();
+  await page.waitForURL(/\/polls\/(?!manage).+/);
+  // exact, because "Available on <date>" is a substring of the
+  // "Unavailable on <date>" control sitting beside it.
+  const available = page.getByRole("button", { name: `Available on ${winningDate}`, exact: true });
+  await available.click();
+  await expect(available).toHaveAttribute("aria-pressed", "true");
+
+  await page.goto("/polls/manage");
+  await page.getByRole("link", { name: title }).click();
+  await page.waitForURL(/\/polls\/manage\/.+/);
+
+  // Both ways of closing confirm inline first; accepting is the deliberate
+  // act that a deadline passing never performs.
+  await page.getByRole("radio", { name: new RegExp(winningDate) }).check();
+  await page.getByRole("button", { name: "Close and create Event" }).click();
+  await expect(page.getByRole("alert")).toContainText("cannot be reopened");
+  await page.getByRole("button", { name: "Yes, close and create it" }).click();
+
+  const eventLink = page.getByRole("link", { name: "Open the Event this created" });
+  await expect(eventLink).toBeVisible();
+
+  await page.goto("/events");
+  const row = page.getByRole("row").filter({ hasText: title });
+  await expect(row).toBeVisible();
+
+  // The Event carries the Poll's availability for context and no RSVP —
+  // promotion never converts a hypothetical into a commitment (ADR-0005).
+  await page.getByRole("link", { name: title }).click();
+  await page.waitForURL(/\/events\/[^/]+$/);
+  await expect(page.getByRole("heading", { name: "Availability from the Poll" })).toBeVisible();
+  await expect(page.getByText("No RSVPs yet.")).toBeVisible();
+});

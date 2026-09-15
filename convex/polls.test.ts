@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import schema from "./schema";
 import { api } from "./_generated/api";
@@ -33,6 +33,7 @@ async function seedMembers(t: ReturnType<typeof convexTest>) {
   return { directorId, choristerId };
 }
 
+const HOUR = 60 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
 const MARCH_1 = new Date(2026, 2, 1).getTime();
 
@@ -490,4 +491,258 @@ test("setAvailability leaves the Poll's own audit stamp alone", async () => {
   const after = (await t.run(async (ctx) => ctx.db.get("polls", pollId)))!;
   expect(after.updatedAt).toBe(before.updatedAt);
   expect(after.updatedByMemberId).toBe(before.updatedByMemberId);
+});
+
+// Closing a Poll and promoting its winner into an Event (#87). The ADR this
+// implements exists to protect one thing above all: an Availability is a
+// hypothetical about an unchosen date, so promotion must never write an
+// `rsvps` row.
+describe("closing a Poll", () => {
+  async function pollWithTwoDates(t: ReturnType<typeof convexTest>, title = "Spring Concert") {
+    const asDirector = t.withIdentity(directorIdentity);
+    const pollId = await asDirector.mutation(api.polls.create, {
+      title,
+      description: "Which Saturday works?",
+      location: "St Mary's",
+      candidateDates: [{ startsAt: MARCH_1 }, { startsAt: MARCH_1 + 7 * DAY }],
+    });
+    const candidateDates = (await asDirector.query(api.polls.get, { pollId }))!.candidateDates;
+    return { pollId, candidateDates };
+  }
+
+  test("promotion creates an Event from the Poll's draft metadata and the winning date", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const { pollId, candidateDates } = await pollWithTwoDates(t);
+
+    const eventId = await t.withIdentity(directorIdentity).mutation(api.polls.close, {
+      pollId,
+      winningCandidateDateId: candidateDates[1]._id,
+    });
+
+    const event = await t.run(async (ctx) => ctx.db.get("events", eventId!));
+    expect(event).toMatchObject({
+      title: "Spring Concert",
+      description: "Which Saturday works?",
+      location: "St Mary's",
+      startsAt: MARCH_1 + 7 * DAY,
+      setlist: [],
+      visibility: "private",
+    });
+  });
+
+  test("a winning window becomes an Event with its start and no end", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const asDirector = t.withIdentity(directorIdentity);
+    const pollId = await asDirector.mutation(api.polls.create, {
+      title: "Evening rehearsal",
+      candidateDates: [{ startsAt: MARCH_1, endsAt: MARCH_1 + 2 * HOUR }],
+    });
+    const candidateDates = (await asDirector.query(api.polls.get, { pollId }))!.candidateDates;
+
+    const eventId = await asDirector.mutation(api.polls.close, {
+      pollId,
+      winningCandidateDateId: candidateDates[0]._id,
+    });
+
+    // `events` carries no end field, so the window narrows to its start
+    // rather than growing the Events schema for one caller (#87).
+    const event = (await t.run(async (ctx) => ctx.db.get("events", eventId!)))!;
+    expect({ startsAt: event.startsAt, hasEnd: "endsAt" in event }).toEqual({
+      startsAt: MARCH_1,
+      hasEnd: false,
+    });
+  });
+
+  test("the Poll records the date that won and the Event it produced", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const { pollId, candidateDates } = await pollWithTwoDates(t);
+
+    const eventId = await t.withIdentity(directorIdentity).mutation(api.polls.close, {
+      pollId,
+      winningCandidateDateId: candidateDates[0]._id,
+    });
+
+    const poll = await t.run(async (ctx) => ctx.db.get("polls", pollId));
+    expect(poll).toMatchObject({
+      status: "closed",
+      winningCandidateDateId: candidateDates[0]._id,
+      resultingEventId: eventId,
+    });
+  });
+
+  test("promotion writes no RSVP, whatever Availability the Poll collected", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const { pollId, candidateDates } = await pollWithTwoDates(t);
+    await t
+      .withIdentity(choristerIdentity)
+      .mutation(api.polls.setAvailability, { candidateDateId: candidateDates[0]._id, value: "available" });
+    await t
+      .withIdentity(directorIdentity)
+      .mutation(api.polls.setAvailability, { candidateDateId: candidateDates[0]._id, value: "if_needed" });
+
+    await t
+      .withIdentity(directorIdentity)
+      .mutation(api.polls.close, { pollId, winningCandidateDateId: candidateDates[0]._id });
+
+    // The decision ADR-0005 exists to protect: an Availability is never
+    // converted into a commitment to the Event that was just created.
+    const rsvps = await t.run(async (ctx) => ctx.db.query("rsvps").collect());
+    expect(rsvps).toHaveLength(0);
+  });
+
+  test("closing with no winner creates no Event", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const { pollId } = await pollWithTwoDates(t);
+
+    await t.withIdentity(directorIdentity).mutation(api.polls.close, { pollId });
+
+    const events = await t.run(async (ctx) => ctx.db.query("events").collect());
+    expect(events).toHaveLength(0);
+  });
+
+  test("closing with no winner closes the Poll and records no winner", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const { pollId } = await pollWithTwoDates(t);
+
+    await t.withIdentity(directorIdentity).mutation(api.polls.close, { pollId });
+
+    const poll = await t.run(async (ctx) => ctx.db.get("polls", pollId));
+    // Picked rather than toMatchObject: an absent optional field is a
+    // missing key, which toMatchObject reads as a mismatch against
+    // `undefined` rather than as the "no winner" this asserts.
+    expect({
+      status: poll?.status,
+      winningCandidateDateId: poll?.winningCandidateDateId,
+      resultingEventId: poll?.resultingEventId,
+    }).toEqual({ status: "closed", winningCandidateDateId: undefined, resultingEventId: undefined });
+  });
+
+  test("closing stamps the Poll with the Director who closed it", async () => {
+    const t = convexTest(schema, modules);
+    const { directorId } = await seedMembers(t);
+    const { pollId } = await pollWithTwoDates(t);
+
+    await t.withIdentity(directorIdentity).mutation(api.polls.close, { pollId });
+
+    const poll = await t.run(async (ctx) => ctx.db.get("polls", pollId));
+    expect(poll?.updatedByMemberId).toBe(directorId);
+  });
+
+  test("a closed Poll refuses to be closed again — there is no reopen", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const { pollId, candidateDates } = await pollWithTwoDates(t);
+    await t.withIdentity(directorIdentity).mutation(api.polls.close, { pollId });
+
+    await expect(
+      t
+        .withIdentity(directorIdentity)
+        .mutation(api.polls.close, { pollId, winningCandidateDateId: candidateDates[0]._id }),
+    ).rejects.toThrow(/closed Poll is read-only/);
+  });
+
+  test("a closed Poll refuses an edit to its metadata", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const { pollId } = await pollWithTwoDates(t);
+    await t.withIdentity(directorIdentity).mutation(api.polls.close, { pollId });
+
+    await expect(
+      t.withIdentity(directorIdentity).mutation(api.polls.update, { pollId, title: "Renamed" }),
+    ).rejects.toThrow(/closed Poll is read-only/);
+  });
+
+  test("a Chorister cannot close a Poll", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const { pollId, candidateDates } = await pollWithTwoDates(t);
+
+    await expect(
+      t
+        .withIdentity(choristerIdentity)
+        .mutation(api.polls.close, { pollId, winningCandidateDateId: candidateDates[0]._id }),
+    ).rejects.toThrow(/Requires capability: managePolls/);
+  });
+
+  test("a winning date from another Poll is refused", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const { pollId } = await pollWithTwoDates(t);
+    const other = await pollWithTwoDates(t, "A different Poll");
+
+    await expect(
+      t
+        .withIdentity(directorIdentity)
+        .mutation(api.polls.close, { pollId, winningCandidateDateId: other.candidateDates[0]._id }),
+    ).rejects.toThrow(/does not belong to this Poll/);
+  });
+
+  test("a refused promotion leaves no Event behind", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const { pollId } = await pollWithTwoDates(t);
+    const other = await pollWithTwoDates(t, "A different Poll");
+
+    await expect(
+      t
+        .withIdentity(directorIdentity)
+        .mutation(api.polls.close, { pollId, winningCandidateDateId: other.candidateDates[0]._id }),
+    ).rejects.toThrow();
+
+    const events = await t.run(async (ctx) => ctx.db.query("events").collect());
+    expect(events).toHaveLength(0);
+  });
+
+  test("getForEvent finds the Poll behind the Event it produced", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const { pollId, candidateDates } = await pollWithTwoDates(t);
+    const eventId = await t
+      .withIdentity(directorIdentity)
+      .mutation(api.polls.close, { pollId, winningCandidateDateId: candidateDates[0]._id });
+
+    const grid = await t.withIdentity(choristerIdentity).query(api.polls.getForEvent, { eventId: eventId! });
+    expect(grid?.poll._id).toBe(pollId);
+  });
+
+  test("getForEvent carries the Poll's grid so the Event can show it", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const { pollId, candidateDates } = await pollWithTwoDates(t);
+    await t
+      .withIdentity(choristerIdentity)
+      .mutation(api.polls.setAvailability, { candidateDateId: candidateDates[0]._id, value: "available" });
+    const eventId = await t
+      .withIdentity(directorIdentity)
+      .mutation(api.polls.close, { pollId, winningCandidateDateId: candidateDates[0]._id });
+
+    const grid = await t.withIdentity(directorIdentity).query(api.polls.getForEvent, { eventId: eventId! });
+    expect(grid?.tallies[0]).toEqual({ available: 1, unavailable: 0, if_needed: 0, notAnswered: 1 });
+  });
+
+  test("getForEvent is null for an Event no Poll produced", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const eventId = await t.withIdentity(directorIdentity).mutation(api.events.createDraft, { title: "Rehearsal" });
+
+    const grid = await t.withIdentity(directorIdentity).query(api.polls.getForEvent, { eventId });
+    expect(grid).toBeNull();
+  });
+
+  test("getForEvent is closed to a caller with no identity", async () => {
+    const t = convexTest(schema, modules);
+    await seedMembers(t);
+    const { pollId, candidateDates } = await pollWithTwoDates(t);
+    const eventId = await t
+      .withIdentity(directorIdentity)
+      .mutation(api.polls.close, { pollId, winningCandidateDateId: candidateDates[0]._id });
+
+    await expect(t.query(api.polls.getForEvent, { eventId: eventId! })).rejects.toThrow(/Not signed in/);
+  });
 });

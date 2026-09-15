@@ -6,6 +6,7 @@ import { Doc, Id } from "../../convex/_generated/dataModel";
 import { can } from "../lib/roles";
 import { RSVP_LABEL, RSVP_STATUSES } from "../lib/rsvp";
 import { useTrackedMutation } from "../lib/useTrackedMutation";
+import { OriginatingPollAvailability } from "../components/polls/OriginatingPollAvailability";
 import { MemberPage, usePageTitle } from "../design/MemberPage";
 import { linkClass } from "../design/forms";
 import NotFound from "./NotFound";
@@ -97,6 +98,8 @@ function EventDetailContent({ viewer }: { viewer: Doc<"members"> }) {
               )}
             </>
           )}
+
+          <OriginatingPollAvailability eventId={event._id} />
         </div>
       )}
     </>
