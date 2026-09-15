@@ -1,0 +1,63 @@
+// The Bulletin reading view (#82): what a Chorister opens from the archive.
+// Reads through getPublished, which returns null for a draft whoever is
+// asking, so a Director following a stale link lands on the 404 rather than
+// previewing unfinished work outside the manage route.
+import { Link, useParams } from "react-router-dom";
+import { useQuery } from "convex/react";
+
+import { api } from "../../convex/_generated/api";
+import { Id } from "../../convex/_generated/dataModel";
+import { editedAt } from "../lib/bulletin";
+import { formatTimestamp } from "../lib/datetime";
+import { MemberPage, usePageTitle } from "../design/MemberPage";
+import { Markdown } from "../design/Markdown";
+import { cardClass, linkClass } from "../design/forms";
+import NotFound from "./NotFound";
+
+export default function BulletinDetail() {
+  return <MemberPage title="Bulletins">{() => <BulletinDetailContent />}</MemberPage>;
+}
+
+function BulletinDetailContent() {
+  const { bulletinId } = useParams<{ bulletinId: string }>();
+  const bulletin = useQuery(api.bulletins.getPublished, { bulletinId: bulletinId as Id<"bulletins"> });
+  usePageTitle(bulletin?.title);
+
+  if (bulletin === null) return <NotFound />;
+  if (bulletin === undefined) {
+    return <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>;
+  }
+
+  // A correction heavy enough to matter is a follow-up Bulletin, not a
+  // silent edit (#49) — so the edited timestamp sits beside the published
+  // one rather than replacing it.
+  const edited = editedAt(bulletin);
+
+  return (
+    <article className={`${cardClass} p-6`}>
+      <h1 className="text-lg font-semibold">{bulletin.title}</h1>
+      <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+        Published {formatTimestamp(bulletin.publishedAt)}
+        {edited === null ? "" : ` · Edited ${formatTimestamp(edited)}`}
+      </p>
+      {bulletin.eventId !== null && (
+        <p className="mt-2 text-sm">
+          <Link to={`/events/${bulletin.eventId}`} className={linkClass}>
+            {bulletin.eventTitle}
+          </Link>
+        </p>
+      )}
+
+      {/* The body is Markdown and must render through this component only:
+          it is the one sanctioned path, and it escapes raw HTML rather than
+          honouring it (see src/design/Markdown.tsx). */}
+      <Markdown source={bulletin.body} className="mt-4 text-sm" />
+
+      {/* REMARKS SLOT (#81) — the Remarks about Pieces this Bulletin carries
+          render here, below the body. #81 exports the RemarksList component;
+          wiring is one import plus `<RemarksList bulletinId={bulletin._id} />`
+          in this spot. Left empty rather than stubbed so there is nothing to
+          unpick, and no empty heading on a Bulletin that has no Remarks. */}
+    </article>
+  );
+}

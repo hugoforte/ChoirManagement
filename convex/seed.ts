@@ -6,7 +6,7 @@ import { Id } from "./_generated/dataModel";
 import { DEFAULT_VOICE_PARTS } from "./lib/pieceAttachmentPolicy";
 
 // Seeding for non-production deployments (the `staging` deployment behind
-// Vercel Preview builds today; a per-branch preview deployment later). Two
+// Vercel Preview builds today; a per-branch preview deployment later). Three
 // separate concerns:
 //
 //   demo              — content, so a reviewer opening a preview URL sees a
@@ -14,6 +14,8 @@ import { DEFAULT_VOICE_PARTS } from "./lib/pieceAttachmentPolicy";
 //   upsertRoleMember  — one app Member per Role, pre-linked to a Clerk test
 //                       user, so authenticated E2E and manual review need no
 //                       "promote me" step against a fresh database.
+//   demoBulletin      — content again, but it needs an author, so it runs
+//                       after the roster rather than inside demo.
 //
 // Why pre-seeding a Member works without touching the auth path at all:
 // `members.ensureCurrentMember` looks the caller up by `clerkUserId` and, when
@@ -38,6 +40,31 @@ const DEMO_PIECES = [
     notes: "From the All-Night Vigil, Op. 37.",
   },
 ];
+
+// Bounds the two lookups demoBulletin does over tables the demo seed itself
+// fills, rather than an unbounded .collect() on a table a real choir grows.
+const SEED_SCAN_LIMIT = 200;
+
+const DEMO_REHEARSAL_TITLE = "Tuesday Rehearsal";
+
+// Markdown, not plain prose: the reading view renders the body through
+// src/design/Markdown.tsx, and a preview with nothing but a paragraph in it
+// wouldn't show whether that rendering works.
+const DEMO_BULLETIN = {
+  title: "After Tuesday's rehearsal",
+  body: `Good work tonight — the Palestrina is finally sitting.
+
+## What we covered
+
+- **Sicut Cervus** — the entries in bar 12, slowly. Count the rest.
+- **The Blue Bird** — the soprano solo floats; everyone else is accompaniment.
+
+## Before next week
+
+1. Look at *Bogoroditse Devo* from the top.
+2. Call time for the Spring Concert is **18:30**.
+`,
+};
 
 // Demo content must never land in a real choir's deployment, and a Convex
 // function can't tell which deployment it's running on — so this is gated on
@@ -109,7 +136,7 @@ export const demo = internalMutation({
     // would make the upcoming-Events lists look broken).
     const now = Date.now();
     await ctx.db.insert("events", {
-      title: "Tuesday Rehearsal",
+      title: DEMO_REHEARSAL_TITLE,
       description: "Full choir. Bring your Palestrina.",
       startsAt: now + 3 * day,
       location: "St. Mary's Hall",
@@ -125,6 +152,53 @@ export const demo = internalMutation({
       visibility: "public",
     });
 
+    return null;
+  },
+});
+
+// A Bulletin is authored *by* a Member, so this can't live inside `demo`:
+// there is no roster at that point. `preview` runs it after the Role Members
+// are in place, and a deployment seeded without them gets no demo Bulletin
+// rather than one attributed to a fabricated author.
+export const demoBulletin = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    requireSeedableDeployment();
+
+    const existing = await ctx.db.query("bulletins").take(1);
+    if (existing.length > 0) {
+      return null;
+    }
+
+    // Scanning the roster rather than indexing by role, for bootstrapFirstAdmin's
+    // reason: a seeded roster is three rows, and the index would exist for this
+    // alone. A Chorister can't hold manageBulletins, so authoring the demo
+    // Bulletin as one would seed a state the app itself can't produce.
+    const members = await ctx.db.query("members").take(SEED_SCAN_LIMIT);
+    const author =
+      members.find((m) => m.role === "director") ?? members.find((m) => m.role === "admin");
+    if (!author) {
+      console.warn("No Director or Admin Member to author the demo Bulletin — skipping.");
+      return null;
+    }
+
+    const events = await ctx.db.query("events").take(SEED_SCAN_LIMIT);
+    const rehearsal = events.find((e) => e.title === DEMO_REHEARSAL_TITLE);
+
+    // Published, not a draft: the point is that a reviewer opening /bulletins
+    // as any Role sees something, and drafts are invisible there.
+    const now = Date.now();
+    await ctx.db.insert("bulletins", {
+      ...DEMO_BULLETIN,
+      eventId: rehearsal?._id,
+      status: "published",
+      publishedAt: now,
+      updatedAt: now,
+      createdByMemberId: author._id,
+      updatedByMemberId: undefined,
+      shareLink: undefined,
+    });
     return null;
   },
 });
@@ -187,27 +261,29 @@ export const preview = internalMutation({
     const raw = process.env.SEED_ROLE_MEMBERS;
     if (!raw) {
       console.warn("SEED_ROLE_MEMBERS is not set — skipping Role Member seeding.");
-      return null;
+    } else {
+      let entries: unknown;
+      try {
+        entries = JSON.parse(raw);
+      } catch (error) {
+        throw new Error(`SEED_ROLE_MEMBERS is not valid JSON: ${String(error)}`);
+      }
+      if (!Array.isArray(entries)) {
+        throw new Error("SEED_ROLE_MEMBERS must be a JSON array.");
+      }
+
+      for (const entry of entries as Array<Record<string, string>>) {
+        await ctx.runMutation(internal.seed.upsertRoleMember, {
+          clerkUserId: entry.clerkUserId,
+          name: entry.name,
+          email: entry.email,
+          role: entry.role as "admin" | "director" | "chorister",
+        });
+      }
     }
 
-    let entries: unknown;
-    try {
-      entries = JSON.parse(raw);
-    } catch (error) {
-      throw new Error(`SEED_ROLE_MEMBERS is not valid JSON: ${String(error)}`);
-    }
-    if (!Array.isArray(entries)) {
-      throw new Error("SEED_ROLE_MEMBERS must be a JSON array.");
-    }
-
-    for (const entry of entries as Array<Record<string, string>>) {
-      await ctx.runMutation(internal.seed.upsertRoleMember, {
-        clerkUserId: entry.clerkUserId,
-        name: entry.name,
-        email: entry.email,
-        role: entry.role as "admin" | "director" | "chorister",
-      });
-    }
+    // Last, because it needs an author from the roster above.
+    await ctx.runMutation(internal.seed.demoBulletin, {});
     return null;
   },
 });

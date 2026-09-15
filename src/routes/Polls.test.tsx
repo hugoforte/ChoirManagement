@@ -65,6 +65,9 @@ function renderAs(role: Doc<"members">["role"]) {
     if (name === getFunctionName(api.members.viewer)) return viewer;
     if (name === getFunctionName(api.choirSettings.get)) return { name: "Riverside Choir", logoUrl: null };
     if (name === getFunctionName(api.polls.listOpen)) return openPolls;
+    // AppShell subscribes to this for the Bulletins unread dot (#82); this
+    // file renders the real shell, so it sees the call.
+    if (name === getFunctionName(api.bulletins.hasUnread)) return false;
     throw new Error(`Unexpected useQuery call: ${name}`);
   }) as typeof useQuery);
 
