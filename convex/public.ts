@@ -116,9 +116,14 @@ const sharedBulletinFields = {
 };
 
 // The `by_share_link_token` index covers an optional field, so every Bulletin
-// without a Share Link indexes under `undefined`. Both callers take
-// `token: v.string()` and pass it through unchanged — an undefined reaching
-// this lookup would match an arbitrary unshared Bulletin (see schema.ts).
+// without a Share Link indexes under `undefined` — they all share one index
+// key. The `token: v.string()` argument on both callers is what keeps an
+// undefined from ever reaching this lookup, and that argument is the real
+// guard (see schema.ts). `.unique()` is a backstop rather than the guard: it
+// throws on multiple matches instead of returning an arbitrary row, so a
+// lookup that did land on that shared key would fail loudly — except on a
+// deployment holding exactly one unshared Bulletin, where it would quietly
+// return it.
 async function bulletinByToken(ctx: QueryCtx, token: string) {
   return await ctx.db
     .query("bulletins")

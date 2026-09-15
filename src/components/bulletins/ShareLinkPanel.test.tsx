@@ -119,14 +119,27 @@ describe("ShareLinkPanel", () => {
     expect(mutations.setMode).toHaveBeenCalledWith({ bulletinId, mode: "sign_in_required" });
   });
 
-  test("revokes the Share Link", async () => {
+  test("revokes the Share Link once the warning is accepted", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderPanel({ token: "tok_abc", mode: "token" });
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
     });
 
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("stops working"));
     expect(mutations.revoke).toHaveBeenCalledWith({ bulletinId });
+  });
+
+  test("leaves the Share Link in place when the revoke warning is declined", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderPanel({ token: "tok_abc", mode: "token" });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    });
+
+    expect(mutations.revoke).not.toHaveBeenCalled();
   });
 
   test("confirms a copy only when the clipboard accepted it", async () => {

@@ -17,6 +17,11 @@ import { inputClass, labelClass, mutedLinkClass, primaryButtonClass } from "../.
 const REGENERATE_WARNING =
   "Regenerate this Share Link? The current URL stops working immediately for everyone you have sent it to.";
 
+// Revoking is at least as destructive as regenerating — it kills the URL and
+// leaves nothing in its place — so it asks the same way.
+const REVOKE_WARNING =
+  "Revoke this Share Link? The current URL stops working immediately, and this Bulletin will have no Share Link until a new one is issued.";
+
 export function ShareLinkPanel({
   bulletinId,
   published,
@@ -77,7 +82,7 @@ export function ShareLinkPanel({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => issue({ bulletinId, mode: "sign_in_required" })}
+              onClick={() => void issue({ bulletinId, mode: "sign_in_required" })}
               disabled={busy}
               className={primaryButtonClass}
             >
@@ -85,7 +90,7 @@ export function ShareLinkPanel({
             </button>
             <button
               type="button"
-              onClick={() => issue({ bulletinId, mode: "token" })}
+              onClick={() => void issue({ bulletinId, mode: "token" })}
               disabled={busy}
               className={primaryButtonClass}
             >
@@ -143,6 +148,7 @@ export function ShareLinkPanel({
             <button
               type="button"
               onClick={() => {
+                if (!window.confirm(REVOKE_WARNING)) return;
                 setCopied(false);
                 void revoke({ bulletinId });
               }}
